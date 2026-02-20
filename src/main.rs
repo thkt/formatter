@@ -36,15 +36,11 @@ enum Formatter {
 }
 
 fn select_formatter(config: &Config, file_path: &str) -> Option<Formatter> {
-    if config.formatters.oxfmt
-        && oxfmt::is_formattable(file_path)
-        && oxfmt::is_available(file_path)
+    if config.formatters.oxfmt && oxfmt::is_formattable(file_path) && oxfmt::is_available(file_path)
     {
         return Some(Formatter::Oxfmt);
     }
-    if config.formatters.biome
-        && biome::is_formattable(file_path)
-        && biome::is_available(file_path)
+    if config.formatters.biome && biome::is_formattable(file_path) && biome::is_available(file_path)
     {
         return Some(Formatter::Biome);
     }
@@ -81,7 +77,10 @@ fn main() {
     let file_path = match &input.tool_input.file_path {
         Some(p) if !p.is_empty() => p.as_str(),
         _ => {
-            eprintln!("formatter: {:?} without file_path, skipping", input.tool_name);
+            eprintln!(
+                "formatter: {:?} without file_path, skipping",
+                input.tool_name
+            );
             return;
         }
     };

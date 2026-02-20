@@ -3,8 +3,8 @@ use std::path::Path;
 use std::process::Command;
 
 pub const EXTENSIONS: &[&str] = &[
-    "ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs", "json", "jsonc", "json5", "css",
-    "scss", "less", "html", "vue", "yaml", "yml", "toml", "md", "mdx", "graphql", "gql",
+    "ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs", "json", "jsonc", "json5", "css", "scss",
+    "less", "html", "vue", "yaml", "yml", "toml", "md", "mdx", "graphql", "gql",
 ];
 
 pub fn is_formattable(path: &str) -> bool {
@@ -29,7 +29,10 @@ pub fn format(file_path: &str) {
         Ok(o) if !o.status.success() => {
             let stderr = String::from_utf8_lossy(&o.stderr);
             if !stderr.is_empty() {
-                eprintln!("formatter: oxfmt: {}", stderr.lines().next().unwrap_or("(no details)"));
+                eprintln!(
+                    "formatter: oxfmt: {}",
+                    stderr.lines().next().unwrap_or("(no details)")
+                );
             }
         }
         Err(e) => {
@@ -46,9 +49,8 @@ mod tests {
     #[test]
     fn formattable_extensions() {
         for ext in [
-            "ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs", "json", "jsonc", "json5",
-            "css", "scss", "less", "html", "vue", "yaml", "yml", "toml", "md", "mdx", "graphql",
-            "gql",
+            "ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs", "json", "jsonc", "json5", "css",
+            "scss", "less", "html", "vue", "yaml", "yml", "toml", "md", "mdx", "graphql", "gql",
         ] {
             assert!(is_formattable(&format!("src/app.{ext}")), "{ext}");
         }

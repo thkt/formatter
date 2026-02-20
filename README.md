@@ -106,7 +106,29 @@ At least one of:
 
 ## Configuration
 
-Place `.claude-formatter.json` at your project's git root. Only specified fields override defaults (all formatters enabled).
+Place `.claude-formatter.json` at your git root. The formatter walks up from the target file to the nearest `.git` directory and looks for the config there. Only specified fields override defaults.
+
+No config file = all formatters enabled (zero-config by default).
+
+| Field              | Default | Description                       |
+| ------------------ | ------- | --------------------------------- |
+| `enabled`          | `true`  | Enable/disable formatter entirely |
+| `formatters.oxfmt` | `true`  | Enable oxfmt                      |
+| `formatters.biome` | `true`  | Enable biome                      |
+
+### Examples
+
+Use oxfmt only (disable biome):
+
+```json
+{
+  "formatters": {
+    "oxfmt": true
+  }
+}
+```
+
+Use biome only (disable oxfmt):
 
 ```json
 {
@@ -116,15 +138,9 @@ Place `.claude-formatter.json` at your project's git root. Only specified fields
 }
 ```
 
-This disables oxfmt for this project, using biome only. Unspecified fields keep defaults.
+### Global config via `~/.claude`
 
-| Field              | Default | Description                       |
-| ------------------ | ------- | --------------------------------- |
-| `enabled`          | `true`  | Enable/disable formatter entirely |
-| `formatters.oxfmt` | `true`  | Enable oxfmt                      |
-| `formatters.biome` | `true`  | Enable biome                      |
-
-No config file = all formatters enabled (zero-config by default).
+If `~/.claude` is a git repository, placing `.claude-formatter.json` there acts as a global default for all files under `~/.claude/`. Each project's own `.claude-formatter.json` takes precedence for files within that project.
 
 ## Exit Codes
 

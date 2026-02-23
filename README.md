@@ -1,5 +1,7 @@
 # claude-formatter
 
+[日本語](README.ja.md)
+
 PostToolUse hook for Claude Code. Auto-formats files after Write/Edit using rustfmt, oxfmt, or biome.
 
 ## Features
@@ -104,8 +106,13 @@ At least one of:
 
 ## How It Works
 
-1. Reads PostToolUse hook input from Claude Code (stdin JSON)
-2. Selects formatter by priority: rustfmt (.rs only) > oxfmt > biome
+1. Reads PostToolUse hook JSON from stdin
+2. Ignores non-Write/Edit/MultiEdit tools
+3. Canonicalizes the file path (rejects symlink tricks, null bytes, relative paths)
+4. Verifies the file is within the current working directory
+5. Loads `.claude-formatter.json` from the git root (if present)
+6. Selects formatter by priority: rustfmt (.rs) > oxfmt > biome
+7. Formats the file in-place
 
 ## Configuration
 

@@ -131,7 +131,6 @@ fn run(input_str: &str) {
                     file_path
                 );
             }
-            // For files without a language-specific formatter, ensure EOF newline.
             if config.formatters.eof_newline {
                 eof_newline::ensure(file_path);
             }

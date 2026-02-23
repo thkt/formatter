@@ -5,7 +5,6 @@
 
 use std::fs;
 
-/// Ensures the file ends with a newline. Skips binary files.
 pub fn ensure(file_path: &str) -> bool {
     let content = match fs::read(file_path) {
         Ok(c) => c,
@@ -92,7 +91,7 @@ mod tests {
     }
 
     #[test]
-    fn handles_dockerfile() {
+    fn appends_exact_content_with_newline() {
         let tmp = TempDir::new().unwrap();
         let file = tmp.path().join("Dockerfile");
         fs::write(&file, "FROM node:20\nCOPY . .").unwrap();
@@ -100,19 +99,6 @@ mod tests {
         assert!(ensure(file.to_str().unwrap()));
 
         let content = fs::read_to_string(&file).unwrap();
-        assert!(content.ends_with('\n'));
         assert_eq!(content, "FROM node:20\nCOPY . .\n");
-    }
-
-    #[test]
-    fn handles_gitignore() {
-        let tmp = TempDir::new().unwrap();
-        let file = tmp.path().join(".gitignore");
-        fs::write(&file, "node_modules\ndist").unwrap();
-
-        assert!(ensure(file.to_str().unwrap()));
-
-        let content = fs::read_to_string(&file).unwrap();
-        assert!(content.ends_with('\n'));
     }
 }

@@ -93,15 +93,22 @@ fn run(input_str: &str) {
         }
     };
 
-    if let Ok(cwd) = std::env::current_dir() {
-        if !canonical.starts_with(&cwd) {
-            eprintln!("formatter: file outside project directory, skipping");
+    let cwd = match std::env::current_dir() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("formatter: cannot determine CWD: {}", e);
             return;
         }
+    };
+    if !canonical.starts_with(&cwd) {
+        eprintln!("formatter: file outside project directory, skipping");
+        return;
     }
 
-    let file_path = canonical.to_string_lossy();
-    let file_path = file_path.as_ref();
+    let Some(file_path) = canonical.to_str() else {
+        eprintln!("formatter: non-UTF-8 path, skipping");
+        return;
+    };
 
     let config = Config::default().with_project_overrides(file_path);
     if !config.enabled {

@@ -122,17 +122,17 @@ No config file = all formatters enabled (zero-config by default).
 
 ### Examples
 
-Use oxfmt only (disable biome):
+Disable biome (use oxfmt):
 
 ```json
 {
   "formatters": {
-    "oxfmt": true
+    "biome": false
   }
 }
 ```
 
-Use biome only (disable oxfmt):
+Disable oxfmt (use biome):
 
 ```json
 {

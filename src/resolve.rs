@@ -25,13 +25,7 @@ pub fn find_git_root(file_path: &str) -> Option<PathBuf> {
 }
 
 pub fn resolve_bin(name: &str, file_path: &str) -> PathBuf {
-    let stop_at = match std::env::var_os("HOME").map(PathBuf::from) {
-        Some(p) => Some(p),
-        None => {
-            eprintln!("formatter: warning: HOME not set, traversal depth-limited");
-            None
-        }
-    };
+    let stop_at = std::env::var_os("HOME").map(PathBuf::from);
     let mut dir = Path::new(file_path).parent();
     let mut depth = 0;
     while let Some(d) = dir {

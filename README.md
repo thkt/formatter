@@ -18,7 +18,7 @@ PostToolUse hook for Claude Code. Auto-formats files after Write/Edit using oxfm
 Installs the binary and registers the hook automatically:
 
 ```bash
-claude plugins marketplace add github:thkt/formatter
+claude plugins marketplace add thkt/sentinels
 claude plugins install formatter
 ```
 

@@ -1,7 +1,0 @@
-{
-  "name": "formatter",
-  "description": "PostToolUse hook for Claude Code. Auto-formats files after Write/Edit using biome.",
-  "author": {
-    "name": "thkt"
-  }
-}

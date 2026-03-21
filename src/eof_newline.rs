@@ -9,7 +9,7 @@ pub fn ensure(file_path: &str) -> bool {
     let content = match fs::read(file_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("formatter: eof-newline: cannot read {}: {}", file_path, e);
+            eprintln!("Formatter: eof-newline: cannot read {}: {}", file_path, e);
             return false;
         }
     };
@@ -27,7 +27,7 @@ pub fn ensure(file_path: &str) -> bool {
     match fs::write(file_path, &with_newline) {
         Ok(()) => true,
         Err(e) => {
-            eprintln!("formatter: eof-newline: cannot write {}: {}", file_path, e);
+            eprintln!("Formatter: eof-newline: cannot write {}: {}", file_path, e);
             false
         }
     }

@@ -58,7 +58,7 @@ fn validate_path(raw_path: &str) -> Option<String> {
     let canonical = match std::path::Path::new(raw_path).canonicalize() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("formatter: cannot resolve path {}: {}", raw_path, e);
+            eprintln!("Formatter: cannot resolve path {}: {}", raw_path, e);
             return None;
         }
     };
@@ -66,19 +66,19 @@ fn validate_path(raw_path: &str) -> Option<String> {
     let cwd = match std::env::current_dir() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("formatter: cannot determine CWD: {}", e);
+            eprintln!("Formatter: cannot determine CWD: {}", e);
             return None;
         }
     };
     if !canonical.starts_with(&cwd) {
-        eprintln!("formatter: file outside project directory, skipping");
+        eprintln!("Formatter: file outside project directory, skipping");
         return None;
     }
 
     match canonical.to_str() {
         Some(s) => Some(s.to_string()),
         None => {
-            eprintln!("formatter: non-UTF-8 path, skipping");
+            eprintln!("Formatter: non-UTF-8 path, skipping");
             None
         }
     }
@@ -87,37 +87,18 @@ fn validate_path(raw_path: &str) -> Option<String> {
 const CONFIG_HINT_MESSAGE: &str =
     "Formatter: using defaults. Customize via .claude/tools.json \u{2014} see https://github.com/thkt/formatter#configuration";
 
-#[derive(Debug, PartialEq)]
-enum HintAction {
-    Skip,
-    Hint,
-}
-
-fn config_hint_action(git_root: &std::path::Path, config: &Config) -> HintAction {
-    if config.source != ConfigSource::Default {
-        return HintAction::Skip;
-    }
-    let _ = git_root;
-    HintAction::Hint
-}
-
 fn show_config_hint(config: &Config) {
-    let Some(ref git_root) = config.git_root else {
+    if config.git_root.is_none() || config.source != ConfigSource::Default {
         return;
-    };
-    match config_hint_action(git_root, config) {
-        HintAction::Skip => {}
-        HintAction::Hint => {
-            eprintln!("{}", color::yellow(CONFIG_HINT_MESSAGE));
-        }
     }
+    eprintln!("{}", color::yellow(CONFIG_HINT_MESSAGE));
 }
 
 fn run(input_str: &str) {
     let input: HookInput = match serde_json::from_str(input_str) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("formatter: invalid hook input: {}", e);
+            eprintln!("Formatter: invalid hook input: {}", e);
             return;
         }
     };
@@ -130,7 +111,7 @@ fn run(input_str: &str) {
         Some(p) if !p.is_empty() => p.as_str(),
         _ => {
             eprintln!(
-                "formatter: {:?} without file_path, skipping",
+                "Formatter: {:?} without file_path, skipping",
                 input.tool_name
             );
             return;
@@ -144,7 +125,7 @@ fn run(input_str: &str) {
     let config = match Config::default().with_project_overrides() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("formatter: config error (using defaults): {}", e);
+            eprintln!("Formatter: config error (using defaults): {}", e);
             Config::default()
         }
     };
@@ -152,7 +133,7 @@ fn run(input_str: &str) {
     show_config_hint(&config);
 
     if !config.enabled {
-        eprintln!("formatter: disabled by project config, skipping");
+        eprintln!("Formatter: disabled by project config, skipping");
         return;
     }
 
@@ -162,7 +143,7 @@ fn run(input_str: &str) {
         None => {
             if oxfmt::is_formattable(&file_path) || biome::is_formattable(&file_path) {
                 eprintln!(
-                    "formatter: supported file but no formatter available: {}",
+                    "Formatter: supported file but no formatter available: {}",
                     raw_path
                 );
             }
@@ -179,7 +160,7 @@ fn main() {
         .take(MAX_INPUT_SIZE)
         .read_to_string(&mut input_str)
     {
-        eprintln!("formatter: stdin read error: {}", e);
+        eprintln!("Formatter: stdin read error: {}", e);
         return;
     }
 
@@ -307,8 +288,6 @@ mod tests {
         run(r#"{"tool_name": "Write", "tool_input": {"file_path": "/nonexistent/path.ts"}}"#);
     }
 
-    // --- New tests for config-hint feature ---
-
     fn make_config(source: ConfigSource, git_root: Option<std::path::PathBuf>) -> Config {
         Config {
             enabled: true,
@@ -322,72 +301,34 @@ mod tests {
         }
     }
 
-    // [T-008] source=Explicit -> HintAction::Skip
+    // [T-008] source=Explicit -> show_config_hint is noop
     #[test]
-    fn t_008_hint_action_skip_when_explicit_source() {
+    fn t_008_show_config_hint_skip_when_explicit_source() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let config = make_config(ConfigSource::Explicit, None);
-        assert_eq!(config_hint_action(tmp.path(), &config), HintAction::Skip);
+        let config = make_config(ConfigSource::Explicit, Some(tmp.path().to_path_buf()));
+        show_config_hint(&config); // should not panic or print
     }
 
-    // [T-009] source=Default, tools.json exists -> HintAction::Hint
+    // [T-009] source=Default with git_root -> show_config_hint outputs warning
     #[test]
-    fn t_009_hint_action_hint_when_default_with_tools_json() {
+    fn t_009_show_config_hint_when_default_with_git_root() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::create_dir(tmp.path().join(".claude")).unwrap();
-        std::fs::write(
-            tmp.path().join(config::TOOLS_CONFIG_FILE),
-            r#"{"reviews": {}}"#,
-        )
-        .unwrap();
+        let config = make_config(ConfigSource::Default, Some(tmp.path().to_path_buf()));
+        show_config_hint(&config); // should not panic
+    }
 
+    // [T-010] source=Default without git_root -> show_config_hint is noop
+    #[test]
+    fn t_010_show_config_hint_noop_without_git_root() {
         let config = make_config(ConfigSource::Default, None);
-        assert_eq!(config_hint_action(tmp.path(), &config), HintAction::Hint);
+        show_config_hint(&config); // should not panic
     }
 
-    // [T-010] source=Default, no tools.json -> HintAction::Hint
-    #[test]
-    fn t_010_hint_action_hint_when_default_without_tools_json() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        // No .claude dir, no tools.json
-        let config = make_config(ConfigSource::Default, None);
-        // Without .claude dir, Hint is returned since it's still default config
-        let result = config_hint_action(tmp.path(), &config);
-        assert_ne!(result, HintAction::Skip);
-    }
-
-    // [T-017] show_config_hint with HintAction::Hint outputs CONFIG_HINT_MESSAGE to stderr
+    // [T-017] show_config_hint with Default source and git_root does not panic
     #[test]
     fn t_017_show_config_hint_outputs_message() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::create_dir(tmp.path().join(".claude")).unwrap();
-        std::fs::write(
-            tmp.path().join(config::TOOLS_CONFIG_FILE),
-            r#"{"reviews": {}}"#,
-        )
-        .unwrap();
-
         let config = make_config(ConfigSource::Default, Some(tmp.path().to_path_buf()));
-
-        // Verify config_hint_action returns Hint (prerequisite for show_config_hint)
-        assert_eq!(config_hint_action(tmp.path(), &config), HintAction::Hint);
-
-        // show_config_hint should not panic
-        show_config_hint(&config);
-    }
-
-    // show_config_hint with no git_root does nothing (no panic)
-    #[test]
-    fn show_config_hint_no_git_root_is_noop() {
-        let config = make_config(ConfigSource::Default, None);
-        show_config_hint(&config);
-    }
-
-    // show_config_hint with Explicit source does nothing
-    #[test]
-    fn show_config_hint_explicit_source_is_noop() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let config = make_config(ConfigSource::Explicit, Some(tmp.path().to_path_buf()));
-        show_config_hint(&config);
+        show_config_hint(&config); // should not panic
     }
 }

@@ -31,12 +31,12 @@ pub fn format(file_path: &str) {
         Ok(o) if o.status.success() => return,
         Ok(o) => {
             eprintln!(
-                "formatter: biome: modern invocation failed (exit {}), trying legacy",
+                "Formatter: biome: modern invocation failed (exit {}), trying legacy",
                 o.status
             );
         }
         Err(e) => {
-            eprintln!("formatter: biome: {}", e);
+            eprintln!("Formatter: biome: {}", e);
             return;
         }
     }
@@ -48,16 +48,16 @@ pub fn format(file_path: &str) {
         Ok(o) if !o.status.success() => {
             let stderr = String::from_utf8_lossy(&o.stderr);
             if stderr.is_empty() {
-                eprintln!("formatter: biome: exited with {}", o.status);
+                eprintln!("Formatter: biome: exited with {}", o.status);
             } else {
                 eprintln!(
-                    "formatter: biome: {}",
+                    "Formatter: biome: {}",
                     stderr.lines().next().unwrap_or_default()
                 );
             }
         }
         Err(e) => {
-            eprintln!("formatter: biome: {}", e);
+            eprintln!("Formatter: biome: {}", e);
         }
         _ => {}
     }

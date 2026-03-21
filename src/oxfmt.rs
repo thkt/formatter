@@ -26,16 +26,16 @@ pub fn format(file_path: &str) {
         Ok(o) if !o.status.success() => {
             let stderr = String::from_utf8_lossy(&o.stderr);
             if stderr.is_empty() {
-                eprintln!("formatter: oxfmt: exited with {}", o.status);
+                eprintln!("Formatter: oxfmt: exited with {}", o.status);
             } else {
                 eprintln!(
-                    "formatter: oxfmt: {}",
+                    "Formatter: oxfmt: {}",
                     stderr.lines().next().unwrap_or_default()
                 );
             }
         }
         Err(e) => {
-            eprintln!("formatter: oxfmt: {}", e);
+            eprintln!("Formatter: oxfmt: {}", e);
         }
         _ => {}
     }

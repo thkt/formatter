@@ -65,7 +65,6 @@ struct ProjectFormattersConfig {
 }
 
 pub(crate) const TOOLS_CONFIG_FILE: &str = ".claude/tools.json";
-const LEGACY_CONFIG_FILE: &str = ".claude-formatter.json";
 
 #[derive(Deserialize)]
 struct ToolsConfig {
@@ -94,13 +93,6 @@ impl Config {
                 let tools: ToolsConfig = serde_json::from_str(&content)
                     .map_err(|e| format!("invalid config {:?}: {}", tools_path, e))?;
                 if let Some(project) = tools.formatter {
-                    // Warn about legacy config if present
-                    let legacy_path = git_root.join(LEGACY_CONFIG_FILE);
-                    if legacy_path.exists() {
-                        eprintln!(
-                            "formatter: .claude-formatter.json is deprecated and ignored. Configuration has been migrated to .claude/tools.json"
-                        );
-                    }
                     return Ok(self.merge(project));
                 }
             }
@@ -108,14 +100,6 @@ impl Config {
                 return Err(format!("cannot read config {:?}: {}", tools_path, e));
             }
             Err(_) => {}
-        }
-
-        // Warn about legacy config if present (no tools.json or no formatter key)
-        let legacy_path = git_root.join(LEGACY_CONFIG_FILE);
-        if legacy_path.exists() {
-            eprintln!(
-                "formatter: .claude-formatter.json is deprecated and ignored. Migrate to .claude/tools.json"
-            );
         }
 
         Ok(self)
@@ -197,8 +181,6 @@ mod tests {
         assert!(merged.formatters.biome);
         assert!(merged.formatters.oxfmt);
     }
-
-    // --- New tests for config-hint feature ---
 
     fn tmp_repo() -> tempfile::TempDir {
         let tmp = tempfile::TempDir::new().unwrap();
@@ -306,24 +288,6 @@ mod tests {
 
         // Restore permissions for cleanup
         fs::set_permissions(&tools_path, fs::Permissions::from_mode(0o644)).unwrap();
-    }
-
-    // [T-011] .claude-formatter.json exists -> deprecation warning, config not loaded from it
-    #[test]
-    fn t_011_legacy_config_emits_deprecation_not_loaded() {
-        let tmp = tmp_repo();
-        fs::write(
-            tmp.path().join(LEGACY_CONFIG_FILE),
-            r#"{"formatters":{"biome":false}}"#,
-        )
-        .unwrap();
-
-        let config = Config::default()
-            .with_overrides_from_root(tmp.path())
-            .unwrap();
-        // Legacy config should NOT be loaded -- biome stays default (true)
-        assert!(config.formatters.biome);
-        assert_eq!(config.source, ConfigSource::Default);
     }
 
     // Verify git_root is set after with_overrides_from_root

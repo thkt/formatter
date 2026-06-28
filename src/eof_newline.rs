@@ -18,6 +18,10 @@ pub fn ensure(file_path: &str) -> bool {
         return false;
     }
 
+    // Detect binary files by scanning for a NUL byte, which is rare in UTF-8
+    // text but common in binary. Cap the scan at the first 512 bytes: binary
+    // formats reveal a NUL early, so a bounded prefix avoids walking large
+    // files while still catching them. Skip rather than append a newline.
     if content[..content.len().min(512)].contains(&0) {
         return false;
     }

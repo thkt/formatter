@@ -1,7 +1,7 @@
 //! EOF newline enforcement for files not covered by language-specific formatters.
 //!
 //! Handles Makefile, Dockerfile, .sh, .gitignore, and other text files that
-//! oxfmt/biome do not support.
+//! oxfmt does not support.
 
 use std::fs;
 

@@ -3,7 +3,6 @@
 //! Reads hook JSON from stdin, selects the appropriate formatter based on file
 //! extension and availability, then formats the file in-place.
 
-mod biome;
 mod color;
 mod config;
 mod eof_newline;
@@ -41,17 +40,12 @@ struct ToolInput {
 #[derive(Debug, PartialEq)]
 enum Formatter {
     Oxfmt,
-    Biome,
 }
 
 fn select_formatter(config: &Config, file_path: &str) -> Option<Formatter> {
     if config.formatters.oxfmt && oxfmt::is_formattable(file_path) && oxfmt::is_available(file_path)
     {
         return Some(Formatter::Oxfmt);
-    }
-    if config.formatters.biome && biome::is_formattable(file_path) && biome::is_available(file_path)
-    {
-        return Some(Formatter::Biome);
     }
     None
 }
@@ -140,9 +134,8 @@ fn run(input_str: &str) {
 
     match select_formatter(&config, &file_path) {
         Some(Formatter::Oxfmt) => oxfmt::format(&file_path),
-        Some(Formatter::Biome) => biome::format(&file_path),
         None => {
-            if oxfmt::is_formattable(&file_path) || biome::is_formattable(&file_path) {
+            if oxfmt::is_formattable(&file_path) {
                 eprintln!(
                     "Formatter: supported file but no formatter available: {}",
                     raw_path
@@ -204,17 +197,6 @@ mod tests {
     }
 
     #[test]
-    fn biome_extensions_subset_of_oxfmt() {
-        for ext in biome::EXTENSIONS {
-            assert!(
-                oxfmt::EXTENSIONS.contains(ext),
-                "biome extension '{}' not in oxfmt EXTENSIONS",
-                ext
-            );
-        }
-    }
-
-    #[test]
     fn select_formatter_non_formattable_returns_none() {
         let config = Config::default();
         assert_eq!(select_formatter(&config, "Makefile"), None);
@@ -222,11 +204,10 @@ mod tests {
     }
 
     #[test]
-    fn select_formatter_all_disabled_returns_none() {
+    fn select_formatter_oxfmt_disabled_returns_none() {
         let config = Config {
             enabled: true,
             formatters: config::FormattersConfig {
-                biome: false,
                 oxfmt: false,
                 eof_newline: true,
             },
@@ -234,40 +215,6 @@ mod tests {
             git_root: None,
         };
         assert_eq!(select_formatter(&config, "src/app.ts"), None);
-    }
-
-    #[test]
-    fn select_formatter_oxfmt_disabled_never_selects_oxfmt() {
-        let config = Config {
-            enabled: true,
-            formatters: config::FormattersConfig {
-                biome: true,
-                oxfmt: false,
-                eof_newline: true,
-            },
-            source: ConfigSource::Default,
-            git_root: None,
-        };
-        assert_ne!(
-            select_formatter(&config, "src/app.ts"),
-            Some(Formatter::Oxfmt)
-        );
-    }
-
-    #[test]
-    fn select_formatter_oxfmt_only_extension() {
-        let config = Config {
-            enabled: true,
-            formatters: config::FormattersConfig {
-                biome: true,
-                oxfmt: false,
-                eof_newline: true,
-            },
-            source: ConfigSource::Default,
-            git_root: None,
-        };
-        // .yaml is oxfmt-only, biome doesn't support it
-        assert_eq!(select_formatter(&config, "config.yaml"), None);
     }
 
     #[test]
@@ -294,7 +241,6 @@ mod tests {
         Config {
             enabled: true,
             formatters: config::FormattersConfig {
-                biome: true,
                 oxfmt: true,
                 eof_newline: true,
             },

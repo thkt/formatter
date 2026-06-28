@@ -2,16 +2,15 @@
 
 # formatter
 
-Claude CodeのPostToolUse hook。Write/Edit後にファイルを自動整形します（oxfmt, biome対応）。
+Claude CodeのPostToolUse hook。Write/Edit後にファイルを自動整形します（oxfmt対応）。
 
 ## 特徴
 
-| 機能                        | 説明                                                        |
-| --------------------------- | ----------------------------------------------------------- |
-| oxfmt統合（優先）           | [oxc.rs](https://oxc.rs)のRust製Prettier互換フォーマッター  |
-| biome統合（フォールバック） | [biomejs.dev](https://biomejs.dev)のコード整形 + import整理 |
-| EOF改行                     | 言語フォーマッターの対象外ファイルに末尾改行を付与          |
-| プロジェクトローカル解決    | `node_modules/.bin/`のバイナリを優先使用                    |
+| 機能                     | 説明                                                       |
+| ------------------------ | ---------------------------------------------------------- |
+| oxfmt統合                | [oxc.rs](https://oxc.rs)のRust製Prettier互換フォーマッター |
+| EOF改行                  | 言語フォーマッターの対象外ファイルに末尾改行を付与         |
+| プロジェクトローカル解決 | `node_modules/.bin/`のバイナリを優先使用                   |
 
 ## インストール
 
@@ -117,27 +116,24 @@ cd .. && rm -rf formatter
 
 ## 要件
 
-フォーマッターを少なくとも1つインストールしてください（oxfmt推奨）。
+oxfmtをインストールしてください。
 
-- [oxfmt](https://oxc.rs/docs/guide/usage/formatter)（`npm i -g oxfmt`）— 推奨
-- [biome](https://biomejs.dev)（`brew install biome` または `npm i -g @biomejs/biome`）— フォールバック
+- [oxfmt](https://oxc.rs/docs/guide/usage/formatter)（`npm i -g oxfmt`）
 
-### フォーマッター優先順位
+### 動作
 
-formatterは **oxfmtを優先**します。oxfmtが利用できない場合はbiomeにフォールバックし、ファイルごとに1つだけ実行されます。
+formatterは対応ファイルにoxfmtを実行します。oxfmtが利用できない場合、対応ファイルは整形されず、EOF改行の付与のみ行われます。
 
-| 条件                             | 使用フォーマッター |
-| -------------------------------- | ------------------ |
-| oxfmt がインストール済み         | oxfmt              |
-| oxfmt 未インストール、biome あり | biome              |
-| どちらも未インストール           | EOF 改行のみ       |
+| 条件                   | 使用する処理 |
+| ---------------------- | ------------ |
+| oxfmt インストール済み | oxfmt        |
+| oxfmt 未インストール   | EOF 改行のみ |
 
 ## 対応ファイル
 
 | フォーマッター | 拡張子                                                                                                                                                                      |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | oxfmt          | `.ts` `.tsx` `.js` `.jsx` `.mts` `.cts` `.mjs` `.cjs` `.json` `.jsonc` `.json5` `.css` `.scss` `.less` `.html` `.vue` `.yaml` `.yml` `.toml` `.md` `.mdx` `.graphql` `.gql` |
-| biome          | `.ts` `.tsx` `.js` `.jsx` `.mts` `.cts` `.mjs` `.cjs` `.json` `.jsonc` `.css`                                                                                               |
 
 ## 動作フロー
 
@@ -146,8 +142,7 @@ formatterは **oxfmtを優先**します。oxfmtが利用できない場合はbi
 3. ファイルパスを正規化（シンボリックリンク、nullバイト、相対パスを拒否）
 4. ファイルがカレントディレクトリ配下にあることを検証
 5. `.claude/tools.json` または `.claude-formatter.json` から設定を読み込み（存在する場合）
-6. 優先順位に従ってフォーマッターを選択: oxfmt > biome
-7. ファイルをインプレースで整形
+6. oxfmtでファイルをインプレースで整形（oxfmtが利用できない場合はEOF改行にフォールバック）
 
 ## 終了コード
 
@@ -174,7 +169,6 @@ formatterは **oxfmtを優先**します。oxfmtが利用できない場合はbi
   "formatter": {
     "enabled": true,
     "oxfmt": true,
-    "biome": true,
     "eofNewline": true
   }
 }
@@ -182,17 +176,7 @@ formatterは **oxfmtを優先**します。oxfmtが利用できない場合はbi
 
 ### 設定例
 
-biomeを無効化する設定です（oxfmtのみ使用）。
-
-```json
-{
-  "formatter": {
-    "biome": false
-  }
-}
-```
-
-oxfmtを無効化する設定です（biomeを使用）。
+oxfmtを無効化する設定です（EOF改行のみ）。
 
 ```json
 {

@@ -26,7 +26,6 @@ pub struct Config {
 
 #[derive(Debug)]
 pub struct FormattersConfig {
-    pub biome: bool,
     pub oxfmt: bool,
     pub eof_newline: bool,
 }
@@ -34,7 +33,6 @@ pub struct FormattersConfig {
 impl Default for FormattersConfig {
     fn default() -> Self {
         Self {
-            biome: true,
             oxfmt: true,
             eof_newline: true,
         }
@@ -55,7 +53,6 @@ impl Default for Config {
 #[derive(Deserialize)]
 struct ProjectConfig {
     enabled: Option<bool>,
-    biome: Option<bool>,
     oxfmt: Option<bool>,
     #[serde(rename = "eofNewline")]
     eof_newline: Option<bool>,
@@ -104,9 +101,6 @@ impl Config {
         if let Some(enabled) = project.enabled {
             self.enabled = enabled;
         }
-        if let Some(v) = project.biome {
-            self.formatters.biome = v;
-        }
         if let Some(v) = project.oxfmt {
             self.formatters.oxfmt = v;
         }
@@ -125,7 +119,6 @@ mod tests {
     fn default_config_all_enabled() {
         let config = Config::default();
         assert!(config.enabled);
-        assert!(config.formatters.biome);
         assert!(config.formatters.oxfmt);
         assert!(config.formatters.eof_newline);
     }
@@ -137,7 +130,6 @@ mod tests {
 
         let merged = base.merge(&project);
         assert!(!merged.formatters.oxfmt);
-        assert!(merged.formatters.biome);
         assert!(merged.formatters.eof_newline);
     }
 
@@ -158,7 +150,7 @@ mod tests {
 
         let merged = base.merge(&project);
         assert!(!merged.enabled);
-        assert!(merged.formatters.biome);
+        assert!(merged.formatters.oxfmt);
     }
 
     #[test]
@@ -168,7 +160,6 @@ mod tests {
 
         let merged = base.merge(&project);
         assert!(merged.enabled);
-        assert!(merged.formatters.biome);
         assert!(merged.formatters.oxfmt);
     }
 
@@ -214,7 +205,6 @@ mod tests {
             .with_overrides_from_root(tmp.path())
             .unwrap();
         assert!(!config.formatters.oxfmt);
-        assert!(config.formatters.biome);
         assert_eq!(config.source, ConfigSource::Explicit);
     }
 
@@ -231,9 +221,25 @@ mod tests {
         let config = Config::default()
             .with_overrides_from_root(tmp.path())
             .unwrap();
-        assert!(config.formatters.biome);
         assert!(config.formatters.oxfmt);
         assert_eq!(config.source, ConfigSource::Default);
+    }
+
+    // Legacy "biome" key in tools.json is ignored, not an error (backward compat)
+    #[test]
+    fn legacy_biome_key_is_ignored() {
+        let tmp = tmp_repo_with_claude();
+        fs::write(
+            tmp.path().join(TOOLS_CONFIG_FILE),
+            r#"{"formatter": {"biome": false, "oxfmt": true}}"#,
+        )
+        .unwrap();
+
+        let config = Config::default()
+            .with_overrides_from_root(tmp.path())
+            .unwrap();
+        assert!(config.formatters.oxfmt);
+        assert_eq!(config.source, ConfigSource::Explicit);
     }
 
     // [T-005] Invalid JSON in tools.json -> Result::Err
@@ -256,7 +262,6 @@ mod tests {
             .with_overrides_from_root(tmp.path())
             .unwrap();
         assert!(config.enabled);
-        assert!(config.formatters.biome);
         assert!(config.formatters.oxfmt);
         assert_eq!(config.source, ConfigSource::Default);
     }

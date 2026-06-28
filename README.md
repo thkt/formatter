@@ -2,12 +2,11 @@
 
 # formatter
 
-PostToolUse hook for Claude Code. Auto-formats files after Write/Edit using oxfmt or biome.
+PostToolUse hook for Claude Code. Auto-formats files after Write/Edit using oxfmt.
 
 ## Features
 
-- **oxfmt integration** (priority): Rust-powered Prettier-compatible formatter from [oxc.rs](https://oxc.rs)
-- **biome integration** (fallback): Code formatting + organizeImports from [biomejs.dev](https://biomejs.dev)
+- **oxfmt integration**: Rust-powered Prettier-compatible formatter from [oxc.rs](https://oxc.rs)
 - **EOF newline**: Ensures files end with a newline (for files without a language formatter)
 - **Project-local resolution**: Uses `node_modules/.bin/` when available
 
@@ -115,27 +114,24 @@ When installed as a plugin, hooks are registered automatically. For manual setup
 
 ## Requirements
 
-Install at least one formatter (oxfmt is preferred):
+Install oxfmt:
 
-- [oxfmt](https://oxc.rs/docs/guide/usage/formatter) (`npm i -g oxfmt`) — **recommended**
-- [biome](https://biomejs.dev) (`brew install biome` or `npm i -g @biomejs/biome`) — fallback
+- [oxfmt](https://oxc.rs/docs/guide/usage/formatter) (`npm i -g oxfmt`)
 
-### Formatter Priority
+### Behavior
 
-formatter uses **oxfmt first**. If oxfmt is not available, it falls back to biome. Only one runs per file.
+formatter runs oxfmt on supported files. When oxfmt is not available, supported files are left untouched and only the EOF newline is ensured.
 
-| Condition                            | Formatter used   |
-| ------------------------------------ | ---------------- |
-| oxfmt installed                      | oxfmt            |
-| oxfmt not installed, biome installed | biome            |
-| Neither installed                    | EOF newline only |
+| Condition           | Action used      |
+| ------------------- | ---------------- |
+| oxfmt installed     | oxfmt            |
+| oxfmt not installed | EOF newline only |
 
 ## Supported File Types
 
 | Formatter | Extensions                                                                                                                                                                  |
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | oxfmt     | `.ts` `.tsx` `.js` `.jsx` `.mts` `.cts` `.mjs` `.cjs` `.json` `.jsonc` `.json5` `.css` `.scss` `.less` `.html` `.vue` `.yaml` `.yml` `.toml` `.md` `.mdx` `.graphql` `.gql` |
-| biome     | `.ts` `.tsx` `.js` `.jsx` `.mts` `.cts` `.mjs` `.cjs` `.json` `.jsonc` `.css`                                                                                               |
 
 ## How It Works
 
@@ -144,8 +140,7 @@ formatter uses **oxfmt first**. If oxfmt is not available, it falls back to biom
 3. Canonicalizes the file path (rejects symlink tricks, null bytes, relative paths)
 4. Verifies the file is within the current working directory
 5. Loads config from `.claude/tools.json` or `.claude-formatter.json` (if present)
-6. Selects formatter by priority: oxfmt > biome
-7. Formats the file in-place
+6. Formats the file in-place with oxfmt (falls back to EOF newline if oxfmt is unavailable)
 
 ## Exit Codes
 
@@ -172,7 +167,6 @@ Add a `formatter` key to `.claude/tools.json` at your project root. All fields a
   "formatter": {
     "enabled": true,
     "oxfmt": true,
-    "biome": true,
     "eofNewline": true
   }
 }
@@ -180,17 +174,7 @@ Add a `formatter` key to `.claude/tools.json` at your project root. All fields a
 
 ### Examples
 
-Disable biome (use oxfmt only):
-
-```json
-{
-  "formatter": {
-    "biome": false
-  }
-}
-```
-
-Disable oxfmt (use biome):
+Disable oxfmt (EOF newline only):
 
 ```json
 {

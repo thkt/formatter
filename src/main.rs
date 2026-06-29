@@ -1,7 +1,7 @@
 //! Claude Code PostToolUse hook that auto-formats files on Write/Edit/MultiEdit.
 //!
 //! Reads hook JSON from stdin, selects the appropriate formatter based on file
-//! extension and availability, then formats the file in-place.
+//! extension and project config, then formats the file in-place.
 
 mod color;
 mod config;
@@ -79,25 +79,10 @@ enum Formatter {
 }
 
 fn select_formatter(config: &Config, file_path: &str) -> Option<Formatter> {
-    if config.formatters.oxfmt && oxfmt::is_formattable(file_path) && oxfmt::is_available(file_path)
-    {
+    if config.formatters.oxfmt && oxfmt::is_formattable(file_path) {
         return Some(Formatter::Oxfmt);
     }
     None
-}
-
-/// The remediation to report when no formatter handled a supported file, or
-/// `None` when leaving it unformatted is intentional. oxfmt being disabled in
-/// project config is an opt-out, not a degradation, so the record is suppressed
-/// rather than telling a user who disabled oxfmt to install it. When oxfmt is
-/// enabled and the file is formattable but no formatter was selected, the only
-/// remaining cause is a missing binary, so installing it is the right advice.
-fn skip_next_step(config: &Config, file_path: &str) -> Option<&'static str> {
-    if config.formatters.oxfmt && oxfmt::is_formattable(file_path) {
-        Some("install oxfmt to format this file")
-    } else {
-        None
-    }
 }
 
 fn validate_path(raw_path: &str) -> Option<String> {
@@ -187,12 +172,14 @@ fn run(input_str: &str) -> Result<(), FormatterError> {
         return Ok(());
     }
 
+    // An oxfmt-selected file is owned by oxfmt end to end: when the binary is
+    // missing, oxfmt::format records that as an error rather than falling back
+    // here. The eof_newline pass is only for files no formatter supports
+    // (Makefile and the like), so a missing oxfmt does not silently degrade a
+    // .ts file into a bare EOF-newline fixup.
     match select_formatter(&config, &file_path) {
         Some(Formatter::Oxfmt) => oxfmt::format(&file_path),
         None => {
-            if let Some(next_step) = skip_next_step(&config, &file_path) {
-                report::emit_degraded(&file_path, "oxfmt", "skipped", next_step, &[]);
-            }
             if config.formatters.eof_newline {
                 eof_newline::ensure(&file_path);
             }
@@ -302,37 +289,15 @@ mod tests {
     }
 
     #[test]
-    fn skip_next_step_advises_install_when_oxfmt_enabled_but_unselected() {
-        // oxfmt enabled + a supported file but no formatter was selected means
-        // the binary is missing, so the remediation is to install it.
+    fn select_formatter_oxfmt_enabled_formattable_returns_oxfmt() {
+        // [T-001] oxfmt enabled + a formattable file selects Oxfmt from config and
+        // extension alone. Binary presence is no longer probed here; a missing
+        // oxfmt surfaces later via oxfmt::format's spawn-Err path.
         let config = make_config(ConfigSource::Default, None);
         assert_eq!(
-            skip_next_step(&config, "src/app.ts"),
-            Some("install oxfmt to format this file")
+            select_formatter(&config, "src/app.ts"),
+            Some(Formatter::Oxfmt)
         );
-    }
-
-    #[test]
-    fn skip_next_step_silent_when_oxfmt_disabled_by_config() {
-        // Disabling oxfmt is an intentional opt-out, not a degradation; advising
-        // "install oxfmt" would be wrong, so no record is emitted.
-        let config = Config {
-            enabled: true,
-            formatters: config::FormattersConfig {
-                oxfmt: false,
-                eof_newline: true,
-            },
-            source: ConfigSource::Default,
-            git_root: None,
-        };
-        assert_eq!(skip_next_step(&config, "src/app.ts"), None);
-    }
-
-    #[test]
-    fn skip_next_step_silent_for_unsupported_file() {
-        // A file oxfmt does not handle is not a degraded oxfmt outcome.
-        let config = make_config(ConfigSource::Default, None);
-        assert_eq!(skip_next_step(&config, "Makefile"), None);
     }
 
     #[test]

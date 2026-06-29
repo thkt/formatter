@@ -21,7 +21,11 @@ pub fn has_extension(path: &str, extensions: &[&str]) -> bool {
 /// nothing above it — and caps the run at [`MAX_TRAVERSAL_DEPTH`] directories.
 /// The shared skeleton both resolvers walk; each applies its own predicate to
 /// the yielded directories, so the bound and the `$HOME` fence stay in one place
-/// rather than being hand-rolled (and drifting) per resolver.
+/// rather than being hand-rolled (and drifting) per resolver. gates keeps an
+/// independent copy of this same skeleton (depth cap + `.git`/`$HOME` fence +
+/// exec-bit). guardrails deliberately does not — it uses a `canonicalize` +
+/// `project_root` boundary instead, to preserve its `OutsideProjectRoot`
+/// forensic signal that a `.git` fence would suppress.
 fn bounded_ancestors(start: &Path) -> impl Iterator<Item = &Path> {
     let stop_at = env::var_os("HOME").map(PathBuf::from);
     let mut past_home = false;
@@ -44,13 +48,30 @@ pub fn find_git_root_from_dir(start: &Path) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
+/// True when `candidate` is a runnable local binary: it exists and, on unix, has
+/// at least one execute bit set. A `node_modules/.bin` entry without an execute
+/// bit can't be spawned, so treat it as absent and keep walking — matching gates'
+/// resolver. On non-unix there is no execute bit, so fall back to existence.
+#[cfg(unix)]
+fn is_usable_bin(candidate: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    candidate
+        .metadata()
+        .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_usable_bin(candidate: &Path) -> bool {
+    candidate.exists()
+}
+
 pub fn resolve_bin(name: &str, file_path: &str) -> PathBuf {
     let Some(start) = Path::new(file_path).parent() else {
         return PathBuf::from(name);
     };
     for dir in bounded_ancestors(start) {
         let candidate = dir.join("node_modules/.bin").join(name);
-        if candidate.exists() {
+        if is_usable_bin(&candidate) {
             return candidate;
         }
         // A `.git` dir marks the project root, so don't search above it. Unlike
@@ -68,6 +89,17 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    /// Writes an executable stub at `path` so [`resolve_bin`]'s exec-bit check
+    /// treats it as runnable. On non-unix the bit is implicit (existence check).
+    fn write_exec_bin(path: &Path) {
+        fs::write(path, "").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+
     #[test]
     fn has_extension_matches() {
         assert!(has_extension("src/app.ts", &["ts", "js"]));
@@ -82,11 +114,29 @@ mod tests {
         let bin_dir = tmp.path().join("node_modules/.bin");
         fs::create_dir_all(&bin_dir).unwrap();
         let bin_path = bin_dir.join("biome");
-        fs::write(&bin_path, "").unwrap();
+        write_exec_bin(&bin_path);
 
         let file_path = tmp.path().join("src/app.ts");
         let result = resolve_bin("biome", file_path.to_str().unwrap());
         assert_eq!(result, bin_path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skips_non_executable_bin() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new().unwrap();
+        let bin_dir = tmp.path().join("node_modules/.bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        let bin_path = bin_dir.join("biome");
+        fs::write(&bin_path, "").unwrap();
+        fs::set_permissions(&bin_path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        // A non-executable local bin can't be spawned, so resolution skips it and
+        // falls back to the bare name (PATH lookup).
+        let file_path = tmp.path().join("src/app.ts");
+        let result = resolve_bin("biome", file_path.to_str().unwrap());
+        assert_eq!(result, PathBuf::from("biome"));
     }
 
     #[test]
@@ -103,7 +153,7 @@ mod tests {
 
         let root_bin = tmp.path().join("node_modules/.bin");
         fs::create_dir_all(&root_bin).unwrap();
-        fs::write(root_bin.join("biome"), "").unwrap();
+        write_exec_bin(&root_bin.join("biome"));
 
         let project = tmp.path().join("project");
         fs::create_dir_all(project.join(".git")).unwrap();
@@ -123,7 +173,7 @@ mod tests {
         let bin_dir = project.join("node_modules/.bin");
         fs::create_dir_all(&bin_dir).unwrap();
         let bin_path = bin_dir.join("oxfmt");
-        fs::write(&bin_path, "").unwrap();
+        write_exec_bin(&bin_path);
 
         let file_path = project.join("src/app.ts");
         let result = resolve_bin("oxfmt", file_path.to_str().unwrap());
@@ -188,7 +238,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let bin = tmp.path().join("node_modules/.bin");
         fs::create_dir_all(&bin).unwrap();
-        fs::write(bin.join("biome"), "").unwrap();
+        write_exec_bin(&bin.join("biome"));
 
         let mut deep = tmp.path().to_path_buf();
         for i in 0..levels {
@@ -228,7 +278,7 @@ mod tests {
 
         let bin_dir = tmp.path().join("node_modules/.bin");
         fs::create_dir_all(&bin_dir).unwrap();
-        fs::write(bin_dir.join("biome"), "").unwrap();
+        write_exec_bin(&bin_dir.join("biome"));
 
         let file_path = deep.join("app.ts");
         let result = resolve_bin("biome", file_path.to_str().unwrap());

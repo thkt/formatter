@@ -120,12 +120,13 @@ Install oxfmt:
 
 ### Behavior
 
-formatter runs oxfmt on supported files. When oxfmt is not available, supported files are left untouched and only the EOF newline is ensured.
+formatter runs oxfmt on supported files. When oxfmt is not available, a supported file is left unchanged and reported as a degraded outcome (exit 0); it is not given an EOF newline. EOF-newline enforcement applies only to files outside oxfmt's extensions.
 
-| Condition           | Action used      |
-| ------------------- | ---------------- |
-| oxfmt installed     | oxfmt            |
-| oxfmt not installed | EOF newline only |
+| Condition                              | Action used                          |
+| -------------------------------------- | ------------------------------------ |
+| Supported extension, oxfmt installed   | oxfmt                                |
+| Supported extension, oxfmt unavailable | left unchanged, reported as degraded |
+| Other extension                        | EOF newline only                     |
 
 ## Supported File Types
 
@@ -140,7 +141,7 @@ formatter runs oxfmt on supported files. When oxfmt is not available, supported 
 3. Canonicalizes the file path (rejects symlink tricks, null bytes, relative paths)
 4. Verifies the file is within the current working directory
 5. Loads config from `.claude/tools.json` (if present)
-6. Formats the file in-place with oxfmt (falls back to EOF newline if oxfmt is unavailable)
+6. Formats the file in-place: oxfmt for supported extensions, EOF-newline enforcement for the rest. A supported file is owned by oxfmt end to end — if the binary is unavailable the file is left unchanged and reported as degraded (exit 0), not downgraded to EOF newline
 
 ## Exit Codes
 
@@ -154,11 +155,11 @@ Exit codes follow sysexits.h, matching the Group 3 (Hook tool) baseline of ADR-0
 
 Silent-fix policy: a failure of the formatting itself (a syntax error oxfmt cannot fix, a missing binary, etc.) stays exit 0. This keeps the hook from blocking the developer over a style concern; such failures are reported as advisory through the structured output below. Non-zero codes are reserved for the two infrastructure faults — a broken hook contract (invalid input) and an internal bug — so a metrics dashboard can branch on them.
 
-As a PostToolUse hook, the exit code is interpreted by Claude Code (code 2 feeds stderr back to Claude, other non-zero codes surface a `hook error` in the transcript), so it cannot also encode formatted-vs-skipped-vs-error. That distinction is carried by the structured output below instead.
+As a PostToolUse hook, the exit code is interpreted by Claude Code (code 2 feeds stderr back to Claude, other non-zero codes surface a `hook error` in the transcript), so it cannot also encode formatted-vs-error. That distinction is carried by the structured output below instead.
 
 ## Structured Output
 
-Set `FORMATTER_VERBOSE=1` to emit a JSON line to stderr for each formatting action describing what happened. A single file can produce more than one line when it falls back (for example `oxfmt` skipped, then `eof-newline` applied). Default operation stays silent. This lets an agent see which formatter touched which file without parsing exit codes.
+Set `FORMATTER_VERBOSE=1` to emit a JSON line to stderr for each formatting action describing what happened. Each file produces exactly one line: `oxfmt` and `eof-newline` are mutually exclusive per file (a supported extension takes oxfmt, the rest take eof-newline), so a single file never reports both. Default operation stays silent. This lets an agent see which formatter touched which file without parsing exit codes.
 
 ```json
 { "file": "/path/to/app.ts", "formatter": "oxfmt", "action": "formatted" }
@@ -171,12 +172,11 @@ Set `FORMATTER_VERBOSE=1` to emit a JSON line to stderr for each formatting acti
 | `formatted`    | The formatter ran in write mode. oxfmt does not diff, so this covers no-op runs |
 | `would-format` | Dry-run only. The file is not yet formatted and would change                    |
 | `unchanged`    | Dry-run only. The file is already formatted                                     |
-| `skipped`      | A supported file had no available formatter                                     |
-| `error`        | The formatter failed                                                            |
+| `error`        | The formatter failed, including a missing oxfmt binary                          |
 
 ### Degraded outcomes
 
-When a supported file is left unformatted (`skipped` or `error`), the record carries three extra fields so an agent can react without parsing free-form stderr. `degraded` is `true`, `next_step` names the remediation, and `notes` lists the underlying diagnostics (omitted when there are none).
+When a supported file is left unformatted (`error`), the record carries three extra fields so an agent can react without parsing free-form stderr. `degraded` is `true`, `next_step` names the remediation, and `notes` lists the underlying diagnostics (omitted when there are none).
 
 ```json
 {

@@ -105,22 +105,54 @@ fn write(oxfmt: &Path, file_path: &str) {
     }
 }
 
-/// The diagnostic notes for a failed `oxfmt` run: the first meaningful line of
-/// its stderr, or the exit status when stderr is blank. Shared so the check and
-/// write paths report failures alike. oxfmt prefixes its diagnostic with a blank
-/// line, so the first non-blank line is taken rather than `lines().next()`
-/// (which would be empty).
+/// Max diagnostic lines kept in `notes`. An oxfmt parse error is a miette-style
+/// block — the error line, the `,-[file:line:col]` location, the offending
+/// source line, and a caret (~5 lines) — so the cap leaves headroom while
+/// bounding how much stderr a multi-file run can dump into the record.
+const MAX_DIAGNOSTIC_LINES: usize = 10;
+
+/// Total byte budget for the kept diagnostic. The line cap alone cannot bound a
+/// single pathological line (a minified source preview echoed by oxfmt), so a
+/// line is dropped once it would exceed the remaining budget — keeping the
+/// earlier error and location lines rather than splitting one mid-way.
+const MAX_DIAGNOSTIC_BYTES: usize = 1024;
+
+/// The diagnostic notes for a failed `oxfmt` run: the diagnostic block from its
+/// stderr, or the exit status when stderr is blank. Shared so the check and
+/// write paths report failures alike. The block spans multiple lines (error +
+/// `,-[file:line:col]` location + source + caret); each becomes its own note so
+/// an agent reading the record keeps the error position, not just its first
+/// line, and the human renderer can indent the lines independently.
 fn failure_notes(o: &Output) -> Vec<String> {
     let stderr = String::from_utf8_lossy(&o.stderr);
-    match first_diagnostic(&stderr) {
-        Some(line) => vec![line.to_owned()],
-        None => vec![format!("oxfmt exited with {}", o.status)],
+    let lines = diagnostic_lines(&stderr);
+    if lines.is_empty() {
+        vec![format!("oxfmt exited with {}", o.status)]
+    } else {
+        lines
     }
 }
 
-/// The first non-blank line of formatter output, or `None` when it is all blank.
-fn first_diagnostic(stderr: &str) -> Option<&str> {
-    stderr.lines().find(|line| !line.trim().is_empty())
+/// The diagnostic block of formatter stderr: the run of lines starting at the
+/// first non-blank line (oxfmt prefixes its diagnostic with a blank line),
+/// capped at [`MAX_DIAGNOSTIC_LINES`] and [`MAX_DIAGNOSTIC_BYTES`] so the error,
+/// its location, and the caret survive without flooding `notes`. Empty when the
+/// stderr is all blank.
+fn diagnostic_lines(stderr: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut budget = MAX_DIAGNOSTIC_BYTES;
+    for line in stderr
+        .lines()
+        .skip_while(|line| line.trim().is_empty())
+        .take(MAX_DIAGNOSTIC_LINES)
+    {
+        if line.len() > budget {
+            break;
+        }
+        budget -= line.len();
+        lines.push(line.to_owned());
+    }
+    lines
 }
 
 #[cfg(test)]
@@ -205,21 +237,52 @@ mod tests {
     }
 
     #[test]
-    fn first_diagnostic_skips_leading_blank_lines() {
-        // oxfmt prefixes its diagnostic with a blank line; the reported message
-        // must be the first line with real content, not that blank.
+    fn diagnostic_lines_skips_leading_blanks_and_keeps_the_block() {
+        // oxfmt prefixes its diagnostic with a blank line; the leading blank is
+        // dropped and every following line of the block is kept as its own
+        // entry, so the location and caret survive alongside the error line.
         assert_eq!(
-            first_diagnostic("\n  x Unexpected token\n  more"),
-            Some("  x Unexpected token")
+            diagnostic_lines("\n  x Unexpected token\n  more"),
+            vec!["  x Unexpected token", "  more"]
         );
-        assert_eq!(first_diagnostic(""), None);
-        assert_eq!(first_diagnostic("\n  \n"), None);
+        assert!(diagnostic_lines("").is_empty());
+        assert!(diagnostic_lines("\n  \n").is_empty());
     }
 
     #[test]
-    fn failure_notes_extracts_diagnostic_from_parse_error() {
-        // A real oxfmt parse failure must land its diagnostic in the notes so an
-        // agent reading the JSON record sees the cause without parsing stderr.
+    fn diagnostic_lines_caps_line_count() {
+        // A formatter that floods stderr must not flood notes: at most
+        // MAX_DIAGNOSTIC_LINES lines are kept.
+        let flood: String = (0..30).map(|i| format!("line {i}\n")).collect();
+        assert_eq!(diagnostic_lines(&flood).len(), MAX_DIAGNOSTIC_LINES);
+    }
+
+    #[test]
+    fn diagnostic_lines_drops_a_line_over_the_byte_budget() {
+        // A single pathological line (a minified source preview) is dropped at
+        // the byte budget, but the earlier error and location lines are kept.
+        let huge = "x".repeat(MAX_DIAGNOSTIC_BYTES + 1);
+        let stderr = format!("  x error\n  ,-[a.ts:1:1]\n{huge}\n  `----");
+        let notes = diagnostic_lines(&stderr);
+        assert_eq!(notes, vec!["  x error", "  ,-[a.ts:1:1]"]);
+    }
+
+    #[test]
+    fn diagnostic_lines_accumulates_byte_budget_across_lines() {
+        // The budget spans the whole block, not each line: two lines that each
+        // fit alone but together exceed it keep only the first. This pins the
+        // per-line decrement — pinning the budget at its full value would
+        // wrongly keep both.
+        let half = "y".repeat(MAX_DIAGNOSTIC_BYTES * 2 / 3);
+        let stderr = format!("{half}\n{half}");
+        assert_eq!(diagnostic_lines(&stderr), vec![half]);
+    }
+
+    #[test]
+    fn failure_notes_preserves_location_from_parse_error() {
+        // A real oxfmt parse failure must land its full diagnostic in notes so
+        // an agent sees the error position, not just the first line — the whole
+        // point of keeping multiple lines.
         use std::fs;
         use tempfile::TempDir;
 
@@ -238,10 +301,13 @@ mod tests {
             .unwrap();
 
         let notes = failure_notes(&out);
-        assert_eq!(notes.len(), 1, "expected one diagnostic note");
         assert!(
-            !notes[0].trim().is_empty(),
-            "note must carry the diagnostic, got: {notes:?}"
+            notes.len() > 1,
+            "expected the multi-line block, got: {notes:?}"
+        );
+        assert!(
+            notes.iter().any(|n| n.contains("broken.json")),
+            "notes must carry the `,-[file:line:col]` location, got: {notes:?}"
         );
     }
 

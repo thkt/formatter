@@ -36,6 +36,12 @@ jobs:
         with:
           tool: cargo-nextest
 
+      # oxfmt is the real formatter the binary shells out to. Without it the
+      # oxfmt-path tests skip silently and the formatting contract goes
+      # unexercised, so install the pinned version (renovate bumps it).
+      - name: Install oxfmt
+        run: npm i -g oxfmt@0.56.0
+
       - name: Check
         run: cargo check
 
@@ -116,6 +122,13 @@ jobs:
         uses: taiki-e/install-action@184183c2401be73c3bf42c2e61268aa5855379c1 # v2
         with:
           tool: cargo-llvm-cov
+
+      # The new oxfmt check/write branches only execute when oxfmt is present,
+      # so without it head coverage drops below main and the gate fails on its
+      # own feature. Installed once here, it covers both the head and base
+      # measurements below (a global binary survives the git checkout).
+      - name: Install oxfmt
+        run: npm i -g oxfmt@0.56.0
 
       - name: Coverage delta gate (project C0 must not drop vs main)
         run: |

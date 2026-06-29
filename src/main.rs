@@ -7,6 +7,7 @@ mod color;
 mod config;
 mod eof_newline;
 mod oxfmt;
+mod report;
 mod resolve;
 
 use config::{Config, ConfigSource};
@@ -141,6 +142,7 @@ fn run(input_str: &str) {
                     "Formatter: supported file but no formatter available: {}",
                     raw_path
                 );
+                report::emit(&file_path, "oxfmt", "skipped");
             }
             if config.formatters.eof_newline {
                 eof_newline::ensure(&file_path);

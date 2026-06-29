@@ -150,6 +150,32 @@ formatter runs oxfmt on supported files. When oxfmt is not available, supported 
 
 The formatter never blocks operations. It silently formats on success and logs errors to stderr.
 
+As a PostToolUse hook, the exit code is interpreted by Claude Code (code 2 feeds stderr back to Claude, other non-zero codes surface a `hook error` in the transcript), so it cannot also encode formatted-vs-skipped-vs-error. That distinction is carried by the structured output below instead.
+
+## Structured Output
+
+Set `FORMATTER_VERBOSE=1` to emit a JSON line to stderr for each formatting action describing what happened. A single file can produce more than one line when it falls back (for example `oxfmt` skipped, then `eof-newline` applied). Default operation stays silent. This lets an agent see which formatter touched which file without parsing exit codes.
+
+```json
+{ "file": "/path/to/app.ts", "formatter": "oxfmt", "action": "formatted" }
+```
+
+`formatter` is `oxfmt` or `eof-newline`. `action` is one of:
+
+| `action`       | When it appears                                                                 |
+| -------------- | ------------------------------------------------------------------------------- |
+| `formatted`    | The formatter ran in write mode. oxfmt does not diff, so this covers no-op runs |
+| `would-format` | Dry-run only. The file is not yet formatted and would change                    |
+| `unchanged`    | Dry-run only. The file is already formatted                                     |
+| `skipped`      | A supported file had no available formatter                                     |
+| `error`        | The formatter failed                                                            |
+
+## Dry Run
+
+Set `FORMATTER_DRY_RUN=1` to report what would change without writing any file. The structured output is always emitted in this mode. oxfmt files use `oxfmt --check`, so an `action` of `would-format` means the file is not yet formatted and `unchanged` means it already is.
+
+The `eof-newline` formatter reports `would-format` only for files that need a trailing newline. A file that already ends correctly produces no line, whereas `oxfmt --check` also reports `unchanged`. Dry-run output therefore lists the files that would change, not every file inspected.
+
 ## Configuration
 
 Add a `formatter` key to `.claude/tools.json` at your project root. All fields are optional — only specify what you want to override.

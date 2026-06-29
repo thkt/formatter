@@ -3,9 +3,17 @@
 //! Handles Makefile, Dockerfile, .sh, .gitignore, and other text files that
 //! oxfmt does not support.
 
+use crate::report;
 use std::fs;
 
 pub fn ensure(file_path: &str) -> bool {
+    ensure_inner(file_path, report::dry_run())
+}
+
+/// `dry_run` is passed in (not read from the environment here) so both the
+/// preview and the write path are testable without toggling process env, which
+/// is `unsafe` under edition 2024.
+fn ensure_inner(file_path: &str, dry_run: bool) -> bool {
     let content = match fs::read(file_path) {
         Ok(c) => c,
         Err(e) => {
@@ -26,11 +34,20 @@ pub fn ensure(file_path: &str) -> bool {
         return false;
     }
 
+    if dry_run {
+        report::emit(file_path, "eof-newline", "would-format");
+        return false;
+    }
+
     let mut with_newline = content;
     with_newline.push(b'\n');
     match fs::write(file_path, &with_newline) {
-        Ok(()) => true,
+        Ok(()) => {
+            report::emit(file_path, "eof-newline", "formatted");
+            true
+        }
         Err(e) => {
+            report::emit(file_path, "eof-newline", "error");
             eprintln!("Formatter: eof-newline: cannot write {}: {}", file_path, e);
             false
         }
@@ -91,6 +108,19 @@ mod tests {
     #[test]
     fn nonexistent_file_does_not_panic() {
         assert!(!ensure("/nonexistent/path/to/file.sh"));
+    }
+
+    #[test]
+    fn dry_run_does_not_append_newline() {
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("Makefile");
+        let without_newline = "all:\n\techo hello";
+        fs::write(&file, without_newline).unwrap();
+
+        // dry_run=true reports the pending change but must not write it.
+        assert!(!ensure_inner(file.to_str().unwrap(), true));
+
+        assert_eq!(fs::read_to_string(&file).unwrap(), without_newline);
     }
 
     #[test]

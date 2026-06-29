@@ -2,7 +2,8 @@
 .yomu/
 .claude/
 .codegraph/
-docs/
+docs/*
+!docs/decisions/
 target/
 workspace/
 

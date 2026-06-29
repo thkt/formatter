@@ -17,7 +17,13 @@ fn ensure_inner(file_path: &str, dry_run: bool) -> bool {
     let content = match fs::read(file_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Formatter: eof-newline: cannot read {}: {}", file_path, e);
+            report::emit_degraded(
+                file_path,
+                "eof-newline",
+                "error",
+                "ensure the file exists and is readable",
+                &[e.to_string()],
+            );
             return false;
         }
     };
@@ -47,8 +53,13 @@ fn ensure_inner(file_path: &str, dry_run: bool) -> bool {
             true
         }
         Err(e) => {
-            report::emit(file_path, "eof-newline", "error");
-            eprintln!("Formatter: eof-newline: cannot write {}: {}", file_path, e);
+            report::emit_degraded(
+                file_path,
+                "eof-newline",
+                "error",
+                "check the file's write permissions",
+                &[e.to_string()],
+            );
             false
         }
     }
@@ -133,5 +144,21 @@ mod tests {
 
         let content = fs::read_to_string(&file).unwrap();
         assert_eq!(content, "FROM node:20\nCOPY . .\n");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn write_failure_reports_degraded_without_panic() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // A read-only file is readable (so content loads and needs a newline)
+        // but not writable, forcing the fs::write error arm. ensure returns
+        // false and surfaces the degraded record instead of panicking.
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("Makefile");
+        fs::write(&file, "all:\n\techo hi").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o444)).unwrap();
+
+        assert!(!ensure(file.to_str().unwrap()));
     }
 }

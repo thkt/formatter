@@ -170,6 +170,23 @@ Set `FORMATTER_VERBOSE=1` to emit a JSON line to stderr for each formatting acti
 | `skipped`      | A supported file had no available formatter                                     |
 | `error`        | The formatter failed                                                            |
 
+### Degraded outcomes
+
+When a supported file is left unformatted (`skipped` or `error`), the record carries three extra fields so an agent can react without parsing free-form stderr. `degraded` is `true`, `next_step` names the remediation, and `notes` lists the underlying diagnostics (omitted when there are none).
+
+```json
+{
+  "file": "/p/app.ts",
+  "formatter": "oxfmt",
+  "action": "error",
+  "degraded": true,
+  "next_step": "fix the reported error before saving; the file was left unformatted",
+  "notes": ["x Unexpected token"]
+}
+```
+
+Neutral records (`formatted`, `unchanged`, `would-format`) keep the original three-key shape and never include these fields. Degraded outcomes always surface even without `FORMATTER_VERBOSE`, where they print as a human-readable line instead of JSON.
+
 ## Dry Run
 
 Set `FORMATTER_DRY_RUN=1` to report what would change without writing any file. The structured output is always emitted in this mode. oxfmt files use `oxfmt --check`, so an `action` of `would-format` means the file is not yet formatted and `unchanged` means it already is.

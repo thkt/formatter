@@ -5,6 +5,15 @@ use crate::resolve::{has_extension, resolve_bin};
 use std::path::Path;
 use std::process::{Command, Output};
 
+/// Remediation for a file `oxfmt` could not format (parse error / exit 2):
+/// formatting cannot fix invalid syntax, so the human must.
+const PARSE_FAIL_NEXT_STEP: &str =
+    "fix the reported error before saving; the file was left unformatted";
+
+/// Remediation for a failure to even run `oxfmt` (spawn error): the binary is
+/// missing or not executable on this path.
+const EXEC_FAIL_NEXT_STEP: &str = "ensure oxfmt is installed and on PATH";
+
 pub const EXTENSIONS: &[&str] = &[
     "ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs", "json", "jsonc", "json5", "css", "scss",
     "less", "html", "vue", "yaml", "yml", "toml", "md", "mdx", "graphql", "gql",
@@ -47,14 +56,26 @@ fn check(oxfmt: &Path, file_path: &str) {
     match Command::new(oxfmt).arg("--check").arg(file_path).output() {
         Ok(o) => {
             let action = classify_check(o.status.code());
-            report::emit(file_path, "oxfmt", action);
             if action == "error" {
-                report_failure(&o);
+                report::emit_degraded(
+                    file_path,
+                    "oxfmt",
+                    "error",
+                    PARSE_FAIL_NEXT_STEP,
+                    &failure_notes(&o),
+                );
+            } else {
+                report::emit(file_path, "oxfmt", action);
             }
         }
         Err(e) => {
-            report::emit(file_path, "oxfmt", "error");
-            eprintln!("Formatter: oxfmt: {}", e);
+            report::emit_degraded(
+                file_path,
+                "oxfmt",
+                "error",
+                EXEC_FAIL_NEXT_STEP,
+                &[e.to_string()],
+            );
         }
     }
 }
@@ -74,26 +95,33 @@ fn classify_check(code: Option<i32>) -> &'static str {
 fn write(oxfmt: &Path, file_path: &str) {
     match Command::new(oxfmt).arg(file_path).output() {
         Ok(o) if o.status.success() => report::emit(file_path, "oxfmt", "formatted"),
-        Ok(o) => {
-            report::emit(file_path, "oxfmt", "error");
-            report_failure(&o);
-        }
-        Err(e) => {
-            report::emit(file_path, "oxfmt", "error");
-            eprintln!("Formatter: oxfmt: {}", e);
-        }
+        Ok(o) => report::emit_degraded(
+            file_path,
+            "oxfmt",
+            "error",
+            PARSE_FAIL_NEXT_STEP,
+            &failure_notes(&o),
+        ),
+        Err(e) => report::emit_degraded(
+            file_path,
+            "oxfmt",
+            "error",
+            EXEC_FAIL_NEXT_STEP,
+            &[e.to_string()],
+        ),
     }
 }
 
-/// Prints the first meaningful line of oxfmt's stderr, falling back to the exit
-/// status when there is none. Shared so the check and write paths surface
-/// failures alike. oxfmt prefixes its diagnostic with a blank line, so the first
-/// non-blank line is taken rather than `lines().next()` (which would be empty).
-fn report_failure(o: &Output) {
+/// The diagnostic notes for a failed `oxfmt` run: the first meaningful line of
+/// its stderr, or the exit status when stderr is blank. Shared so the check and
+/// write paths report failures alike. oxfmt prefixes its diagnostic with a blank
+/// line, so the first non-blank line is taken rather than `lines().next()`
+/// (which would be empty).
+fn failure_notes(o: &Output) -> Vec<String> {
     let stderr = String::from_utf8_lossy(&o.stderr);
     match first_diagnostic(&stderr) {
-        Some(line) => eprintln!("Formatter: oxfmt: {}", line),
-        None => eprintln!("Formatter: oxfmt: exited with {}", o.status),
+        Some(line) => vec![line.to_owned()],
+        None => vec![format!("oxfmt exited with {}", o.status)],
     }
 }
 
@@ -181,6 +209,49 @@ mod tests {
         );
         assert_eq!(first_diagnostic(""), None);
         assert_eq!(first_diagnostic("\n  \n"), None);
+    }
+
+    #[test]
+    fn failure_notes_extracts_diagnostic_from_parse_error() {
+        // A real oxfmt parse failure must land its diagnostic in the notes so an
+        // agent reading the JSON record sees the cause without parsing stderr.
+        use std::fs;
+        use tempfile::TempDir;
+
+        if !oxfmt_available() {
+            eprintln!("oxfmt not available, skipping");
+            return;
+        }
+
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("broken.json");
+        fs::write(&file, "{ \"a\": ").unwrap();
+        let out = Command::new("oxfmt")
+            .arg("--check")
+            .arg(file.to_str().unwrap())
+            .output()
+            .unwrap();
+
+        let notes = failure_notes(&out);
+        assert_eq!(notes.len(), 1, "expected one diagnostic note");
+        assert!(
+            !notes[0].trim().is_empty(),
+            "note must carry the diagnostic, got: {notes:?}"
+        );
+    }
+
+    #[test]
+    fn failure_notes_falls_back_to_status_when_stderr_blank() {
+        // A non-zero exit with no stderr (here `false`) must still yield a note,
+        // naming the exit status rather than an empty string.
+        let Ok(out) = Command::new("false").output() else {
+            eprintln!("`false` not available, skipping");
+            return;
+        };
+
+        let notes = failure_notes(&out);
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].contains("oxfmt exited with"), "got: {notes:?}");
     }
 
     #[test]

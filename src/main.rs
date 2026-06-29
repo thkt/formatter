@@ -52,6 +52,20 @@ fn select_formatter(config: &Config, file_path: &str) -> Option<Formatter> {
     None
 }
 
+/// The remediation to report when no formatter handled a supported file, or
+/// `None` when leaving it unformatted is intentional. oxfmt being disabled in
+/// project config is an opt-out, not a degradation, so the record is suppressed
+/// rather than telling a user who disabled oxfmt to install it. When oxfmt is
+/// enabled and the file is formattable but no formatter was selected, the only
+/// remaining cause is a missing binary, so installing it is the right advice.
+fn skip_next_step(config: &Config, file_path: &str) -> Option<&'static str> {
+    if config.formatters.oxfmt && oxfmt::is_formattable(file_path) {
+        Some("install oxfmt to format this file")
+    } else {
+        None
+    }
+}
+
 fn validate_path(raw_path: &str) -> Option<String> {
     let canonical = match Path::new(raw_path).canonicalize() {
         Ok(p) => p,
@@ -137,12 +151,8 @@ fn run(input_str: &str) {
     match select_formatter(&config, &file_path) {
         Some(Formatter::Oxfmt) => oxfmt::format(&file_path),
         None => {
-            if oxfmt::is_formattable(&file_path) {
-                eprintln!(
-                    "Formatter: supported file but no formatter available: {}",
-                    raw_path
-                );
-                report::emit(&file_path, "oxfmt", "skipped");
+            if let Some(next_step) = skip_next_step(&config, &file_path) {
+                report::emit_degraded(&file_path, "oxfmt", "skipped", next_step, &[]);
             }
             if config.formatters.eof_newline {
                 eof_newline::ensure(&file_path);
@@ -218,6 +228,40 @@ mod tests {
             git_root: None,
         };
         assert_eq!(select_formatter(&config, "src/app.ts"), None);
+    }
+
+    #[test]
+    fn skip_next_step_advises_install_when_oxfmt_enabled_but_unselected() {
+        // oxfmt enabled + a supported file but no formatter was selected means
+        // the binary is missing, so the remediation is to install it.
+        let config = make_config(ConfigSource::Default, None);
+        assert_eq!(
+            skip_next_step(&config, "src/app.ts"),
+            Some("install oxfmt to format this file")
+        );
+    }
+
+    #[test]
+    fn skip_next_step_silent_when_oxfmt_disabled_by_config() {
+        // Disabling oxfmt is an intentional opt-out, not a degradation; advising
+        // "install oxfmt" would be wrong, so no record is emitted.
+        let config = Config {
+            enabled: true,
+            formatters: config::FormattersConfig {
+                oxfmt: false,
+                eof_newline: true,
+            },
+            source: ConfigSource::Default,
+            git_root: None,
+        };
+        assert_eq!(skip_next_step(&config, "src/app.ts"), None);
+    }
+
+    #[test]
+    fn skip_next_step_silent_for_unsupported_file() {
+        // A file oxfmt does not handle is not a degraded oxfmt outcome.
+        let config = make_config(ConfigSource::Default, None);
+        assert_eq!(skip_next_step(&config, "Makefile"), None);
     }
 
     #[test]

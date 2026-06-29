@@ -17,7 +17,13 @@ fn ensure_inner(file_path: &str, dry_run: bool) -> bool {
     let content = match fs::read(file_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Formatter: eof-newline: cannot read {}: {}", file_path, e);
+            report::emit_degraded(
+                file_path,
+                "eof-newline",
+                "error",
+                "ensure the file exists and is readable",
+                &[e.to_string()],
+            );
             return false;
         }
     };
@@ -47,8 +53,13 @@ fn ensure_inner(file_path: &str, dry_run: bool) -> bool {
             true
         }
         Err(e) => {
-            report::emit(file_path, "eof-newline", "error");
-            eprintln!("Formatter: eof-newline: cannot write {}: {}", file_path, e);
+            report::emit_degraded(
+                file_path,
+                "eof-newline",
+                "error",
+                "check the file's write permissions",
+                &[e.to_string()],
+            );
             false
         }
     }

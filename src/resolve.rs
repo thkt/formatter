@@ -3,6 +3,10 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
+/// Caps the parent-directory search at 20 levels to bound the number of
+/// `.git` / `node_modules/.bin` `exists()` checks on deeply nested trees. The
+/// walk uses `Path::parent()` (purely lexical), so it always terminates at the
+/// filesystem root on its own; this is a search-depth bound, not a loop guard.
 const MAX_TRAVERSAL_DEPTH: usize = 20;
 
 pub fn has_extension(path: &str, extensions: &[&str]) -> bool {

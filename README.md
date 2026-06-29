@@ -139,7 +139,7 @@ formatter runs oxfmt on supported files. When oxfmt is not available, supported 
 2. Ignores non-Write/Edit/MultiEdit tools
 3. Canonicalizes the file path (rejects symlink tricks, null bytes, relative paths)
 4. Verifies the file is within the current working directory
-5. Loads config from `.claude/tools.json` or `.claude-formatter.json` (if present)
+5. Loads config from `.claude/tools.json` (if present)
 6. Formats the file in-place with oxfmt (falls back to EOF newline if oxfmt is unavailable)
 
 ## Exit Codes
@@ -153,8 +153,6 @@ The formatter never blocks operations. It silently formats on success and logs e
 ## Configuration
 
 Add a `formatter` key to `.claude/tools.json` at your project root. All fields are optional — only specify what you want to override.
-
-> **Migration**: `.claude-formatter.json` at the project root is still supported as a legacy fallback. If both exist, `.claude/tools.json` takes priority.
 
 **Defaults** (no config file needed):
 

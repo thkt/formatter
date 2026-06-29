@@ -15,6 +15,7 @@ use std::env;
 use std::io::{self, Read};
 use std::path::Path;
 
+/// Caps stdin at 10 MB to bound memory if a caller floods the hook with input.
 const MAX_INPUT_SIZE: u64 = 10_000_000;
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -235,6 +236,26 @@ mod tests {
     #[test]
     fn run_nonexistent_file_skips() {
         run(r#"{"tool_name": "Write", "tool_input": {"file_path": "/nonexistent/path.ts"}}"#);
+    }
+
+    #[test]
+    fn validate_path_rejects_existing_file_outside_cwd() {
+        // A file that exists but resolves outside the CWD must be rejected.
+        // canonicalize succeeds (the file exists), so reaching None exercises
+        // the `!canonical.starts_with(&cwd)` containment branch rather than the
+        // canonicalize-error path.
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        let path = outside.path().to_str().unwrap();
+        assert!(!Path::new(path).starts_with(env::current_dir().unwrap()));
+        assert_eq!(validate_path(path), None);
+    }
+
+    #[test]
+    fn validate_path_accepts_file_inside_cwd() {
+        // Contrast case: a path inside the CWD passes the containment check.
+        let inside = tempfile::NamedTempFile::new_in(env::current_dir().unwrap()).unwrap();
+        let path = inside.path().to_str().unwrap();
+        assert!(validate_path(path).is_some());
     }
 
     fn make_config(source: ConfigSource, git_root: Option<PathBuf>) -> Config {

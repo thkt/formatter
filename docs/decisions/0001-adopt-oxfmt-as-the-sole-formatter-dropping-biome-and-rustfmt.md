@@ -42,6 +42,10 @@ Chosen option: "oxfmt only, frontend-family extensions", because a single format
 
 Existing configs using `biome`/`rustfmt` keys are ignored without error (backward compatible). Users wanting Rust formatting use cargo fmt directly.
 
+### Missing-binary Handling
+
+Clarifies, without changing the decision, the fall-through scope above. "Files oxfmt does not handle fall through to EOF-newline enforcement only" is selected by extension: an extension outside `EXTENSIONS` takes the `None` arm of `select_formatter` and gets EOF-newline. An oxfmt-supported file is owned by oxfmt end to end. When the `oxfmt` binary is missing, `emit_spawn_failure` records it as an `error` outcome rather than degrading the supported file to bare EOF-newline. The `select_formatter` match is `Some(Oxfmt)` exclusive-or `None`, so one file never takes both paths.
+
 ### Reassessment Triggers
 
 - oxfmt's maturity, stability, or supported-language set changes materially (e.g. drops a format this hook depends on, or a competing single-binary formatter surpasses its coverage)

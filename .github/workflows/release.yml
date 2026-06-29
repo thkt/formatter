@@ -36,7 +36,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
 
@@ -135,7 +135,7 @@ jobs:
 
     steps:
       - name: Checkout homebrew-tap
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: thkt/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -203,7 +203,7 @@ jobs:
 
     steps:
       - name: Checkout sentinels
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: thkt/sentinels
           token: ${{ secrets.SENTINELS_TOKEN }}

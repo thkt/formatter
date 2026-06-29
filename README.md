@@ -144,11 +144,15 @@ formatter runs oxfmt on supported files. When oxfmt is not available, supported 
 
 ## Exit Codes
 
-| Code | Meaning |
-| ---- | ------- |
-| 0    | Always  |
+Exit codes follow sysexits.h, matching the Group 3 (Hook tool) baseline of ADR-0066.
 
-The formatter never blocks operations. It silently formats on success and logs errors to stderr.
+| Code | Source        | Meaning                                                        |
+| ---- | ------------- | -------------------------------------------------------------- |
+| 0    | `EX_OK`       | Any formatting outcome, success or failure (silent-fix policy) |
+| 64   | `EX_USAGE`    | The hook input JSON on stdin was not the expected shape        |
+| 70   | `EX_SOFTWARE` | An internal defect in the formatter itself (a caught panic)    |
+
+Silent-fix policy: a failure of the formatting itself (a syntax error oxfmt cannot fix, a missing binary, etc.) stays exit 0. This keeps the hook from blocking the developer over a style concern; such failures are reported as advisory through the structured output below. Non-zero codes are reserved for the two infrastructure faults — a broken hook contract (invalid input) and an internal bug — so a metrics dashboard can branch on them.
 
 As a PostToolUse hook, the exit code is interpreted by Claude Code (code 2 feeds stderr back to Claude, other non-zero codes surface a `hook error` in the transcript), so it cannot also encode formatted-vs-skipped-vs-error. That distinction is carried by the structured output below instead.
 

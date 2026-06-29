@@ -42,6 +42,10 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+# main()'s catch_unwind maps an internal panic to EX_SOFTWARE (70). That relies
+# on the unwind panic strategy; pinning it keeps a future size optimization
+# (panic = "abort") from silently turning panics into SIGABRT (134) instead.
+panic = "unwind"
 
 [dev-dependencies]
 tempfile = "3"

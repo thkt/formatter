@@ -145,4 +145,20 @@ mod tests {
         let content = fs::read_to_string(&file).unwrap();
         assert_eq!(content, "FROM node:20\nCOPY . .\n");
     }
+
+    #[test]
+    #[cfg(unix)]
+    fn write_failure_reports_degraded_without_panic() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // A read-only file is readable (so content loads and needs a newline)
+        // but not writable, forcing the fs::write error arm. ensure returns
+        // false and surfaces the degraded record instead of panicking.
+        let tmp = TempDir::new().unwrap();
+        let file = tmp.path().join("Makefile");
+        fs::write(&file, "all:\n\techo hi").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o444)).unwrap();
+
+        assert!(!ensure(file.to_str().unwrap()));
+    }
 }

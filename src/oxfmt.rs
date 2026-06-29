@@ -170,6 +170,18 @@ mod tests {
         format("/nonexistent/path/to/file.ts");
     }
 
+    #[test]
+    fn check_reports_degraded_when_oxfmt_binary_is_missing() {
+        // A missing oxfmt binary makes Command::output return Err, which must
+        // surface as a degraded record (EXEC_FAIL_NEXT_STEP) rather than panic.
+        check(Path::new("/nonexistent/oxfmt"), "src/app.ts");
+    }
+
+    #[test]
+    fn write_reports_degraded_when_oxfmt_binary_is_missing() {
+        write(Path::new("/nonexistent/oxfmt"), "src/app.ts");
+    }
+
     fn oxfmt_available() -> bool {
         Command::new("oxfmt")
             .arg("--version")

@@ -152,6 +152,49 @@ formatterは対応ファイルにoxfmtを実行します。oxfmtが利用でき�
 
 フォーマッターは操作をブロックしません。成功時はサイレントに整形し、エラーはstderrに出力します。
 
+PostToolUse hookとして、終了コードはClaude Codeが解釈します（コード2はstderrをClaudeに返し、その他の非ゼロコードはトランスクリプトに `hook error` を表示します）。そのため終了コードに「整形/スキップ/エラー」の区別を載せることはできず、その区別は後述の構造化出力が担います。
+
+## 構造化出力
+
+`FORMATTER_VERBOSE=1` を設定すると、各整形アクションについて何が起きたかを記述するJSON行をstderrに出力します。1つのファイルがフォールバックすると複数行を出力することがあります（例: `oxfmt` がスキップされ、続いて `eof-newline` が適用された場合）。デフォルト動作はサイレントのままです。これにより、エージェントは終了コードを解析せずにどのフォーマッターがどのファイルを処理したかを把握できます。
+
+```json
+{ "file": "/path/to/app.ts", "formatter": "oxfmt", "action": "formatted" }
+```
+
+`formatter` は `oxfmt` または `eof-newline` です。`action` は次のいずれかです。
+
+| `action`       | 出力される条件                                                                         |
+| -------------- | -------------------------------------------------------------------------------------- |
+| `formatted`    | フォーマッターが書き込みモードで実行された。oxfmtは差分を取らないため、no-op実行も含む |
+| `would-format` | ドライラン専用。ファイルは未整形で変更される見込み                                     |
+| `unchanged`    | ドライラン専用。ファイルは既に整形済み                                                 |
+| `skipped`      | 対応ファイルだが利用可能なフォーマッターが無い                                         |
+| `error`        | フォーマッターが失敗した                                                               |
+
+### 劣化時の出力
+
+対応ファイルが未整形のまま残った場合（`skipped` または `error`）、エージェントが自由形式のstderrを解析せずに反応できるよう、レコードは3つの追加フィールドを持ちます。`degraded` は `true`、`next_step` は対処法、`notes` は根本原因の診断（無い場合は省略）を示します。
+
+```json
+{
+  "file": "/p/app.ts",
+  "formatter": "oxfmt",
+  "action": "error",
+  "degraded": true,
+  "next_step": "fix the reported error before saving; the file was left unformatted",
+  "notes": ["x Unexpected token"]
+}
+```
+
+中立なレコード（`formatted`、`unchanged`、`would-format`）は元の3キー形状を保ち、これらのフィールドを含めません。劣化時の出力は `FORMATTER_VERBOSE` が無くても常に表面化し、その場合はJSONではなく人間可読な行として出力されます。
+
+## ドライラン
+
+`FORMATTER_DRY_RUN=1` を設定すると、ファイルを書き込まずに何が変更されるかを報告します。このモードでは構造化出力が常に出力されます。oxfmtファイルは `oxfmt --check` を使うため、`action` の `would-format` はファイルが未整形であることを、`unchanged` は既に整形済みであることを意味します。
+
+`eof-newline` フォーマッターは、末尾改行が必要なファイルについてのみ `would-format` を報告します。既に正しく終端しているファイルは行を出力しません。一方 `oxfmt --check` は `unchanged` も報告します。したがってドライラン出力は、検査した全ファイルではなく、変更されるファイルを列挙します。
+
 ## 設定
 
 プロジェクトルートの `.claude/tools.json` に `formatter` キーを追加します。すべてのフィールドはオプションで、オーバーライドしたいもののみ指定してください。

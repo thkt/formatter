@@ -16,46 +16,48 @@ pub fn has_extension(path: &str, extensions: &[&str]) -> bool {
         .is_some_and(|e| extensions.contains(&e))
 }
 
-pub fn find_git_root_from_dir(start: &Path) -> Option<PathBuf> {
+/// The directories to inspect when walking up from `start`: `start` first, then
+/// each parent. Stops once `$HOME` has been yielded — `$HOME` is inspected but
+/// nothing above it — and caps the run at [`MAX_TRAVERSAL_DEPTH`] directories.
+/// The shared skeleton both resolvers walk; each applies its own predicate to
+/// the yielded directories, so the bound and the `$HOME` fence stay in one place
+/// rather than being hand-rolled (and drifting) per resolver.
+fn bounded_ancestors(start: &Path) -> impl Iterator<Item = &Path> {
     let stop_at = env::var_os("HOME").map(PathBuf::from);
-    let mut dir = Some(start);
-    let mut depth = 0;
-    while let Some(d) = dir {
-        if depth >= MAX_TRAVERSAL_DEPTH {
-            break;
-        }
-        if d.join(".git").exists() {
-            return Some(d.to_path_buf());
-        }
-        if stop_at.as_deref() == Some(d) {
-            break;
-        }
-        dir = d.parent();
-        depth += 1;
-    }
-    None
+    let mut past_home = false;
+    start
+        .ancestors()
+        .take(MAX_TRAVERSAL_DEPTH)
+        .take_while(move |dir| {
+            if past_home {
+                return false;
+            }
+            // Yield `$HOME` itself, then fence out everything above it.
+            past_home = stop_at.as_deref() == Some(*dir);
+            true
+        })
+}
+
+pub fn find_git_root_from_dir(start: &Path) -> Option<PathBuf> {
+    bounded_ancestors(start)
+        .find(|dir| dir.join(".git").exists())
+        .map(Path::to_path_buf)
 }
 
 pub fn resolve_bin(name: &str, file_path: &str) -> PathBuf {
-    let stop_at = env::var_os("HOME").map(PathBuf::from);
-    let mut dir = Path::new(file_path).parent();
-    let mut depth = 0;
-    while let Some(d) = dir {
-        if depth >= MAX_TRAVERSAL_DEPTH {
-            break;
-        }
-        let candidate = d.join("node_modules/.bin").join(name);
+    let Some(start) = Path::new(file_path).parent() else {
+        return PathBuf::from(name);
+    };
+    for dir in bounded_ancestors(start) {
+        let candidate = dir.join("node_modules/.bin").join(name);
         if candidate.exists() {
             return candidate;
         }
-        if d.join(".git").exists() {
+        // A `.git` dir marks the project root, so don't search above it. Unlike
+        // `find_git_root_from_dir`, here `.git` is a fence, not the target.
+        if dir.join(".git").exists() {
             break;
         }
-        if stop_at.as_deref() == Some(d) {
-            break;
-        }
-        dir = d.parent();
-        depth += 1;
     }
     PathBuf::from(name)
 }
@@ -176,6 +178,42 @@ mod tests {
 
         let result = find_git_root_from_dir(&deep);
         assert_eq!(result, Some(tmp.path().to_path_buf()));
+    }
+
+    /// Builds `root/d0/.../d{levels-1}/app.ts` with a `node_modules/.bin/biome`
+    /// at `root`, then resolves from the file. `root` sits at ancestor index
+    /// `levels` of the file's parent, so it is inspected only when
+    /// `levels < MAX_TRAVERSAL_DEPTH`. Returns whether the local bin was found.
+    fn resolves_local_bin_at_nesting(levels: usize) -> bool {
+        let tmp = TempDir::new().unwrap();
+        let bin = tmp.path().join("node_modules/.bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(bin.join("biome"), "").unwrap();
+
+        let mut deep = tmp.path().to_path_buf();
+        for i in 0..levels {
+            deep = deep.join(format!("d{i}"));
+        }
+        fs::create_dir_all(&deep).unwrap();
+
+        resolve_bin("biome", deep.join("app.ts").to_str().unwrap()) == bin.join("biome")
+    }
+
+    #[test]
+    fn depth_cap_includes_the_twentieth_ancestor_but_not_the_twenty_first() {
+        // The walk inspects exactly MAX_TRAVERSAL_DEPTH (20) directories from the
+        // file's parent. With 19 nesting levels the bin's dir (root) is the 20th
+        // inspected ancestor (reachable); with 20 levels it is the 21st (beyond
+        // the cap). Pinning both sides catches a ±1 drift in the `take` bound —
+        // respects_depth_limit alone has 5 levels of slack.
+        assert!(
+            resolves_local_bin_at_nesting(19),
+            "20th ancestor must be reachable"
+        );
+        assert!(
+            !resolves_local_bin_at_nesting(20),
+            "21st ancestor must be beyond the cap"
+        );
     }
 
     #[test]

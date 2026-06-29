@@ -2,6 +2,7 @@
 
 use crate::report;
 use crate::resolve::{has_extension, resolve_bin};
+use std::io;
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -47,40 +48,57 @@ fn apply(oxfmt: &Path, file_path: &str, dry_run: bool) {
 /// would not be fixed by formatting, and its diagnostic must not be swallowed.
 fn check(oxfmt: &Path, file_path: &str) {
     match Command::new(oxfmt).arg("--check").arg(file_path).output() {
-        Ok(o) => {
-            let action = classify_check(o.status.code());
-            if action == "error" {
-                report::emit_degraded(
-                    file_path,
-                    "oxfmt",
-                    "error",
-                    PARSE_FAIL_NEXT_STEP,
-                    &failure_notes(&o),
-                );
-            } else {
-                report::emit(file_path, "oxfmt", action);
-            }
-        }
-        Err(e) => {
-            report::emit_degraded(
-                file_path,
-                "oxfmt",
-                "error",
-                EXEC_FAIL_NEXT_STEP,
-                &[e.to_string()],
-            );
-        }
+        Ok(o) => match classify_check(o.status.code()) {
+            CheckOutcome::Neutral(action) => report::emit(file_path, "oxfmt", action),
+            CheckOutcome::Error => emit_run_failure(file_path, &o),
+        },
+        Err(e) => emit_spawn_failure(file_path, &e),
     }
 }
 
-/// Maps an `oxfmt --check` exit code to a structured action. A killed-by-signal
+/// The verdict of an `oxfmt --check` run: a neutral formatting result carrying
+/// its action label, or an error that must surface. Replacing a stringly-typed
+/// action turns the error branch into an exhaustive match the check site cannot
+/// forget, instead of an `== "error"` string compare against this function's
+/// output.
+enum CheckOutcome {
+    Neutral(&'static str),
+    Error,
+}
+
+/// Maps an `oxfmt --check` exit code to a structured verdict. A killed-by-signal
 /// process (`None`) is treated as an error rather than a formatting verdict.
-fn classify_check(code: Option<i32>) -> &'static str {
+fn classify_check(code: Option<i32>) -> CheckOutcome {
     match code {
-        Some(0) => "unchanged",
-        Some(1) => "would-format",
-        _ => "error",
+        Some(0) => CheckOutcome::Neutral("unchanged"),
+        Some(1) => CheckOutcome::Neutral("would-format"),
+        _ => CheckOutcome::Error,
     }
+}
+
+/// Reports a failed `oxfmt` run — it executed but exited non-zero or was killed
+/// — as a degraded record carrying the parse-fix remediation and the stderr
+/// diagnostic block. Shared by the check and write paths, which fail alike.
+fn emit_run_failure(file_path: &str, output: &Output) {
+    report::emit_degraded(
+        file_path,
+        "oxfmt",
+        "error",
+        PARSE_FAIL_NEXT_STEP,
+        &failure_notes(output),
+    );
+}
+
+/// Reports a failure to even spawn `oxfmt` (missing binary / not executable) as
+/// a degraded record naming the install remediation and the OS error.
+fn emit_spawn_failure(file_path: &str, error: &io::Error) {
+    report::emit_degraded(
+        file_path,
+        "oxfmt",
+        "error",
+        EXEC_FAIL_NEXT_STEP,
+        &[error.to_string()],
+    );
 }
 
 /// Formats the file in place. `oxfmt` does not report whether it changed bytes,
@@ -88,20 +106,8 @@ fn classify_check(code: Option<i32>) -> &'static str {
 fn write(oxfmt: &Path, file_path: &str) {
     match Command::new(oxfmt).arg(file_path).output() {
         Ok(o) if o.status.success() => report::emit(file_path, "oxfmt", "formatted"),
-        Ok(o) => report::emit_degraded(
-            file_path,
-            "oxfmt",
-            "error",
-            PARSE_FAIL_NEXT_STEP,
-            &failure_notes(&o),
-        ),
-        Err(e) => report::emit_degraded(
-            file_path,
-            "oxfmt",
-            "error",
-            EXEC_FAIL_NEXT_STEP,
-            &[e.to_string()],
-        ),
+        Ok(o) => emit_run_failure(file_path, &o),
+        Err(e) => emit_spawn_failure(file_path, &e),
     }
 }
 
@@ -330,10 +336,16 @@ mod tests {
         // 0=already formatted, 1=would change, 2=parse error/no target,
         // None=killed by signal. Only 0 and 1 are formatting verdicts; the rest
         // must report error so a parse failure is not mistaken for would-format.
-        assert_eq!(classify_check(Some(0)), "unchanged");
-        assert_eq!(classify_check(Some(1)), "would-format");
-        assert_eq!(classify_check(Some(2)), "error");
-        assert_eq!(classify_check(None), "error");
+        assert!(matches!(
+            classify_check(Some(0)),
+            CheckOutcome::Neutral("unchanged")
+        ));
+        assert!(matches!(
+            classify_check(Some(1)),
+            CheckOutcome::Neutral("would-format")
+        ));
+        assert!(matches!(classify_check(Some(2)), CheckOutcome::Error));
+        assert!(matches!(classify_check(None), CheckOutcome::Error));
     }
 
     #[test]
@@ -358,7 +370,10 @@ mod tests {
             .arg(file.to_str().unwrap())
             .output()
             .unwrap();
-        assert_eq!(classify_check(out.status.code()), "error");
+        assert!(matches!(
+            classify_check(out.status.code()),
+            CheckOutcome::Error
+        ));
 
         apply(&PathBuf::from("oxfmt"), file.to_str().unwrap(), true);
         assert_eq!(fs::read_to_string(&file).unwrap(), broken);

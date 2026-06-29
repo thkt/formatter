@@ -23,13 +23,6 @@ pub fn is_formattable(path: &str) -> bool {
     has_extension(path, EXTENSIONS)
 }
 
-pub fn is_available(file_path: &str) -> bool {
-    Command::new(resolve_bin("oxfmt", file_path))
-        .arg("--version")
-        .output()
-        .is_ok_and(|o| o.status.success())
-}
-
 pub fn format(file_path: &str) {
     let oxfmt = resolve_bin("oxfmt", file_path);
     apply(&oxfmt, file_path, report::dry_run());

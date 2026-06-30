@@ -1,4 +1,12 @@
 rules:
+  adhoc-packages:
+    ignore:
+      # oxfmt is a pinned (renovate-bumped) npm CLI the binary shells out to.
+      # A package-lock.json install can't replace the global one: the coverage
+      # job checks out origin/main mid-run, and a global binary survives that
+      # checkout where a tracked lockfile would not.
+      - ci.yml:43
+      - ci.yml:131
   artipacked:
     ignore:
       # update-homebrew job requires HOMEBREW_TAP_TOKEN to be persisted for git push

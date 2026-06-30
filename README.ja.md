@@ -140,7 +140,7 @@ formatterは対応ファイルにoxfmtを実行します。oxfmtが利用でき�
 
 1. stdinからPostToolUse hookのJSONを読み取り
 2. Write/Edit/MultiEdit以外のツールは無視
-3. ファイルパスを正規化（シンボリックリンク、nullバイト、相対パスを拒否）
+3. ファイルパスを正規化（シンボリックリンクと相対パスを解決し、nullバイトと解決不能なパスを拒否）
 4. ファイルがカレントディレクトリ配下にあることを検証
 5. `.claude/tools.json` から設定を読み込み（存在する場合）
 6. ファイルをインプレースで整形。対応拡張子はoxfmt、それ以外はEOF改行の付与。対応ファイルはoxfmtが終端まで所有し、バイナリが利用不可なら整形せず degraded として報告（終了コード0）、EOF改行へは降格しない
@@ -243,15 +243,15 @@ oxfmtを無効化する設定です（EOF改行のみ）。
 
 ### 設定の解決
 
-設定ファイルは、対象ファイルからもっとも近い `.git` ディレクトリまで上方向に探索されます。`.claude/tools.json` に `formatter` キーがあればデフォルトとマージされます。
+設定ファイルは、カレントディレクトリからもっとも近い `.git` ディレクトリまで上方向に探索されます。`.claude/tools.json` に `formatter` キーがあればデフォルトとマージされます。
 
 ```text
 project-root/          ← .git/ + .claude/tools.json はここ
 ├── .claude/
 │   └── tools.json     ← {"formatter": {"oxfmt": false}}
 ├── src/
-│   └── app.ts         ← 整形対象ファイル → 上方向に設定を探索
-└── .git/
+│   └── app.ts         ← 整形対象ファイル
+└── .git/                  ← CWDから上方向に探索して設定を発見
 ```
 
 ## 関連ツール

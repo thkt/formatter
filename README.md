@@ -138,7 +138,7 @@ formatter runs oxfmt on supported files. When oxfmt is not available, a supporte
 
 1. Reads PostToolUse hook JSON from stdin
 2. Ignores non-Write/Edit/MultiEdit tools
-3. Canonicalizes the file path (rejects symlink tricks, null bytes, relative paths)
+3. Canonicalizes the file path (resolves symlinks and relative paths, rejects null bytes and unresolvable paths)
 4. Verifies the file is within the current working directory
 5. Loads config from `.claude/tools.json` (if present)
 6. Formats the file in-place: oxfmt for supported extensions, EOF-newline enforcement for the rest. A supported file is owned by oxfmt end to end — if the binary is unavailable the file is left unchanged and reported as degraded (exit 0), not downgraded to EOF newline
@@ -241,15 +241,15 @@ Disable formatter for a project:
 
 ### Config Resolution
 
-The config file is found by walking up from the target file to the nearest `.git` directory. If `.claude/tools.json` exists there and contains a `formatter` key, it is loaded and merged with defaults.
+The config file is found by walking up from the current working directory to the nearest `.git` directory. If `.claude/tools.json` exists there and contains a `formatter` key, it is loaded and merged with defaults.
 
 ```text
 project-root/          ← .git/ + .claude/tools.json here
 ├── .claude/
 │   └── tools.json     ← {"formatter": {"oxfmt": false}}
 ├── src/
-│   └── app.ts         ← file being formatted → walks up to find config
-└── .git/
+│   └── app.ts         ← file being formatted
+└── .git/                  ← walked up from CWD to find config
 ```
 
 ## Companion Tools
